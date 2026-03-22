@@ -1,0 +1,192 @@
+"""Client for the Austrian RIS OGD API v2.6 (Rechtsinformationssystem des Bundes).
+
+Public REST API, no authentication required.
+Docs: https://data.bka.gv.at/ris/api/v2.6/Help
+License: CC BY 4.0 (commercial use allowed)
+"""
+import json
+import time
+import logging
+from pathlib import Path
+from typing import Iterator
+
+import requests
+
+from config import RIS_API_BASE, RIS_REQUEST_DELAY, RAW_DIR
+
+logger = logging.getLogger(__name__)
+
+PAGE_SIZES = {"Ten": 10, "Twenty": 20, "Fifty": 50, "OneHundred": 100}
+
+
+class RISClient:
+    """Thin wrapper around the RIS OGD API v2.6 Judikatur endpoint."""
+
+    def __init__(self, delay: float = RIS_REQUEST_DELAY, cache_dir: Path = RAW_DIR):
+        self.base_url = f"{RIS_API_BASE}/Judikatur"
+        self.delay = delay
+        self.cache_dir = cache_dir
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Accept": "application/json",
+            "User-Agent": "RIS-Legal-AI/1.0 (legal research tool)",
+        })
+
+    def search(
+        self,
+        applikation: str = "Justiz",
+        suchworte: str = "",
+        norm: str = "",
+        geschaeftszahl: str = "",
+        datum_von: str = "",
+        datum_bis: str = "",
+        seite: int = 1,
+        pro_seite: str = "OneHundred",
+    ) -> dict:
+        """Search the Judikatur endpoint with optional filters.
+
+        Args:
+            applikation: Court type (Justiz, Vwgh, Vfgh, Bvwg, Lvwg)
+            suchworte: Full-text search terms
+            norm: Legal norm filter (e.g. "StGB §127")
+            geschaeftszahl: Case number (e.g. "1Ob535/90")
+            datum_von: Start date YYYY-MM-DD
+            datum_bis: End date YYYY-MM-DD
+            seite: Page number (1-based)
+            pro_seite: Page size (Ten, Twenty, Fifty, OneHundred)
+        """
+        params = {
+            "Applikation": applikation,
+            "DokumenteProSeite": pro_seite,
+            "Seitennummer": seite,
+        }
+        if suchworte:
+            params["Suchworte"] = suchworte
+        if norm:
+            params["Norm"] = norm
+        if geschaeftszahl:
+            params["Geschaeftszahl"] = geschaeftszahl
+        if datum_von:
+            params["EntscheidungsdatumVon"] = datum_von
+        if datum_bis:
+            params["EntscheidungsdatumBis"] = datum_bis
+
+        logger.info(f"RIS API request: app={applikation}, page={seite}, search='{suchworte}'")
+
+        resp = self.session.get(self.base_url, params=params, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    def iter_decisions(
+        self,
+        applikation: str = "Justiz",
+        suchworte: str = "",
+        norm: str = "",
+        datum_von: str = "",
+        datum_bis: str = "",
+        max_pages: int = 0,
+    ) -> Iterator[dict]:
+        """Iterate through all decisions matching the query, handling pagination.
+
+        Yields individual OgdDocumentReference dicts.
+        Set max_pages=0 for unlimited.
+        """
+        page = 1
+        total_seen = 0
+
+        while True:
+            if max_pages > 0 and page > max_pages:
+                break
+
+            result = self.search(
+                applikation=applikation,
+                suchworte=suchworte,
+                norm=norm,
+                datum_von=datum_von,
+                datum_bis=datum_bis,
+                seite=page,
+            )
+
+            ogd_result = result.get("OgdSearchResult", {})
+            doc_refs = ogd_result.get("OgdDocumentResults", {}).get("OgdDocumentReference", [])
+
+            if not doc_refs:
+                logger.info(f"No more results after page {page - 1}")
+                break
+
+            # Ensure it's always a list (single result comes as dict)
+            if isinstance(doc_refs, dict):
+                doc_refs = [doc_refs]
+
+            for doc in doc_refs:
+                total_seen += 1
+                yield doc
+
+            # Check if there are more pages
+            hits_info = ogd_result.get("OgdDocumentResults", {}).get("Hits", {})
+            page_size = PAGE_SIZES.get("OneHundred", 100)
+            total_hits = int(hits_info.get("#text", "0")) if isinstance(hits_info, dict) else 0
+
+            if total_hits > 0 and total_seen >= total_hits:
+                logger.info(f"All {total_hits} results fetched")
+                break
+
+            page += 1
+            time.sleep(self.delay)
+
+        logger.info(f"Total decisions yielded: {total_seen}")
+
+    def fetch_full_text(self, doc_ref: dict, fmt: str = "Html") -> str | None:
+        """Fetch the full text of a decision from its document URLs.
+
+        Args:
+            doc_ref: An OgdDocumentReference dict from the search results
+            fmt: Format to fetch (Html, Xml, Rtf, Pdf)
+
+        Returns:
+            The full text content or None if not available.
+        """
+        try:
+            doc_list = doc_ref.get("Data", {}).get("Dokumentliste", {})
+            content_ref = doc_list.get("ContentReference", {})
+
+            # ContentReference can be a list or single dict
+            if isinstance(content_ref, list):
+                refs = content_ref
+            else:
+                refs = [content_ref]
+
+            for ref in refs:
+                urls = ref.get("Urls", {}).get("ContentUrl", [])
+                if isinstance(urls, dict):
+                    urls = [urls]
+
+                for url_entry in urls:
+                    data_type = url_entry.get("DataType", "")
+                    if data_type.lower() == fmt.lower():
+                        url = url_entry.get("Url", "")
+                        if url:
+                            resp = self.session.get(url, timeout=30)
+                            resp.raise_for_status()
+                            resp.encoding = "utf-8"
+                            time.sleep(0.3)
+                            return resp.text
+        except Exception as e:
+            logger.warning(f"Failed to fetch full text: {e}")
+
+        return None
+
+    def cache_search_page(self, applikation: str, page: int, data: dict):
+        """Cache a raw API response to disk."""
+        cache_file = self.cache_dir / f"{applikation}_page_{page:04d}.json"
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_total_count(self, applikation: str = "Justiz") -> int:
+        """Get total number of documents for an application."""
+        result = self.search(applikation=applikation, pro_seite="Ten", seite=1)
+        hits = result.get("OgdSearchResult", {}).get("OgdDocumentResults", {}).get("Hits", {})
+        if isinstance(hits, dict):
+            return int(hits.get("#text", "0"))
+        return 0
