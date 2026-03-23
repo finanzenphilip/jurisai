@@ -1,4 +1,6 @@
-"""RAG chain: query → retrieve → generate → verify citations."""
+"""RAG chain: query -> retrieve -> generate -> verify citations."""
+from __future__ import annotations
+
 import re
 import logging
 from dataclasses import dataclass
@@ -15,30 +17,23 @@ logger = logging.getLogger(__name__)
 class RAGResponse:
     """Complete RAG response with answer, sources, and verification."""
     answer: str
-    sources: list[RetrievalResult]
-    cited_gz: set[str]
-    available_gz: set[str]
-    hallucinated_citations: set[str]
+    sources: list
+    cited_gz: set
+    available_gz: set
+    hallucinated_citations: set
     is_verified: bool
 
 
-def extract_geschaeftszahlen(text: str) -> set[str]:
-    """Extract case numbers (Geschaeftszahlen) from text.
-
-    Austrian case numbers follow patterns like:
-    - 1Ob535/90
-    - 5Ob234/20b
-    - 9ObA123/15v
-    - Ro 2019/13/0012
-    """
+def extract_geschaeftszahlen(text: str) -> set:
+    """Extract case numbers (Geschaeftszahlen) from text."""
     patterns = [
-        r'\d+\s?Ob[A-Za-z]?\s?\d+/\d+[a-z]?',  # OGH: 1Ob535/90, 5Ob234/20b
-        r'\d+\s?Os\s?\d+/\d+[a-z]?',  # Strafrecht: 15Os42/21d
-        r'\d+\s?Ra\s?\d+/\d+',  # OGH Revision: 9Ra12/20
-        r'Ro\s?\d{4}/\d+/\d+',  # VwGH: Ro 2019/13/0012
-        r'Ra\s?\d{4}/\d+/\d+',  # VwGH Revision: Ra 2020/21/0345
-        r'[A-Z]\s?\d+/\d+',  # VfGH: G123/2020, E4567/2021
-        r'\d+\s?Bvwg?\s?\d+/\d+',  # BVwG patterns
+        r'\d+\s?Ob[A-Za-z]?\s?\d+/\d+[a-z]?',
+        r'\d+\s?Os\s?\d+/\d+[a-z]?',
+        r'\d+\s?Ra\s?\d+/\d+',
+        r'Ro\s?\d{4}/\d+/\d+',
+        r'Ra\s?\d{4}/\d+/\d+',
+        r'[A-Z]\s?\d+/\d+',
+        r'\d+\s?Bvwg?\s?\d+/\d+',
     ]
 
     found = set()
@@ -59,22 +54,7 @@ def answer_legal_question(
     applikation: Optional[str] = None,
     norm: Optional[str] = None,
 ) -> RAGResponse:
-    """Full RAG pipeline: answer a legal question using retrieved court decisions.
-
-    Args:
-        question: Natural language legal question
-        n_results: Number of source chunks to retrieve
-        gericht: Filter by court
-        rechtsgebiet: Filter by legal area
-        datum_von: Date from filter
-        datum_bis: Date to filter
-        applikation: RIS application filter
-        norm: Legal norm filter
-
-    Returns:
-        RAGResponse with answer, sources, and citation verification
-    """
-    # Step 1: Retrieve relevant chunks
+    """Full RAG pipeline: answer a legal question using retrieved court decisions."""
     logger.info(f"Retrieving sources for: {question}")
     sources = retrieve(
         query=question,
@@ -100,17 +80,12 @@ def answer_legal_question(
             is_verified=True,
         )
 
-    # Step 2: Format context
     context = format_context(sources)
-
-    # Step 3: Build prompt
     user_prompt = RAG_PROMPT_TEMPLATE.format(question=question, context=context)
 
-    # Step 4: Generate answer
     logger.info("Generating answer with Claude...")
     answer = generate(user_prompt=user_prompt, system_prompt=SYSTEM_PROMPT)
 
-    # Step 5: Verify citations
     cited_gz = extract_geschaeftszahlen(answer)
     available_gz = {s.geschaeftszahl for s in sources}
     hallucinated = cited_gz - available_gz if cited_gz else set()

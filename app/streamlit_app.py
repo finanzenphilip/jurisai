@@ -1,159 +1,349 @@
 """Streamlit web interface for RIS Legal AI."""
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
-# Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import streamlit as st
-from config import STREAMLIT_PAGE_TITLE, COURT_APPS
+from config import COURT_APPS
+from generation.pdf_export import generate_export_html
 
-# Page config
 st.set_page_config(
-    page_title=STREAMLIT_PAGE_TITLE,
-    page_icon="⚖️",
+    page_title="JurisAI — Juristische Recherche",
+    page_icon="https://em-content.zobj.net/source/apple/391/balance-scale_2696-fe0f.png",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-st.title("⚖️ RIS Legal AI")
-st.caption("AI-gestützte Rechtsprechungsrecherche für österreichisches Recht")
+# --- Professional CSS ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-# --- Sidebar: Filters & Settings ---
+    /* Global */
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+    /* Header */
+    .main-header {
+        padding: 1.5rem 0 1rem 0;
+        border-bottom: 2px solid #1a3a5c;
+        margin-bottom: 1.5rem;
+    }
+    .main-header h1 {
+        color: #1a3a5c;
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+    .main-header p {
+        color: #5a6c7d;
+        font-size: 0.95rem;
+        margin: 0.3rem 0 0 0;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #f7f8fa;
+        border-right: 1px solid #e2e6ea;
+    }
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        color: #1a3a5c;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    /* Chat messages */
+    .stChatMessage { max-width: 900px; }
+
+    /* Buttons */
+    .stButton > button {
+        border-radius: 6px;
+        font-weight: 500;
+        font-size: 0.85rem;
+        transition: all 0.15s;
+    }
+
+    /* Example buttons */
+    div[data-testid="column"] .stButton > button {
+        text-align: left;
+        background-color: #f7f8fa;
+        border: 1px solid #dde1e6;
+        color: #1a3a5c;
+        padding: 0.6rem 1rem;
+    }
+    div[data-testid="column"] .stButton > button:hover {
+        background-color: #eef1f5;
+        border-color: #1a3a5c;
+    }
+
+    /* Footer disclaimer */
+    .disclaimer {
+        background-color: #f7f8fa;
+        border: 1px solid #e2e6ea;
+        border-radius: 6px;
+        padding: 0.8rem 1rem;
+        font-size: 0.8rem;
+        color: #5a6c7d;
+        margin-top: 1rem;
+    }
+
+    /* Hide Streamlit branding */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    header { visibility: hidden; }
+
+    /* Category headers */
+    .category-header {
+        color: #1a3a5c;
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 1px solid #e2e6ea;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Header ---
+st.markdown("""
+<div class="main-header">
+    <h1>JurisAI</h1>
+    <p>Juristische Recherche für österreichisches Recht &mdash; Gesetze, Rechtsprechung & Verteidigungsstrategien</p>
+</div>
+""", unsafe_allow_html=True)
+
+# --- Sidebar ---
 with st.sidebar:
-    st.header("Einstellungen")
+    st.markdown("### Sucheinstellungen")
 
-    # Mode selection
-    search_mode = st.radio(
-        "Suchmodus",
-        ["Live-Suche (RIS API)", "Datenbank (vorindexiert)"],
-        index=0,
-        help="Live-Suche: Direkte RIS-Abfrage (kein Setup nötig)\n"
-             "Datenbank: Vorindexierte Entscheidungen (schneller, braucht Ingestion)",
-    )
-    is_live = search_mode.startswith("Live")
-
-    st.divider()
-    st.header("🔍 Suchfilter")
-
-    # Court filter
-    gericht_options = ["Alle"] + list(COURT_APPS.keys())
+    gericht_options = ["Alle Gerichte"] + list(COURT_APPS.keys())
     selected_app = st.selectbox(
-        "Gericht / Applikation",
+        "Gericht",
         gericht_options,
         format_func=lambda x: f"{x} — {COURT_APPS[x]}" if x in COURT_APPS else x,
-        help="Filter nach Gerichtstyp",
     )
-    applikation = selected_app if selected_app != "Alle" else None
+    applikation = selected_app if selected_app != "Alle Gerichte" else None
 
-    # Norm filter
-    norm = st.text_input(
-        "Norm / Gesetz",
-        placeholder="z.B. StGB §127, ABGB §1295",
-        help="Filter nach referenzierter Norm",
-    )
+    norm = st.text_input("Norm / Gesetz (optional)", placeholder="z.B. StGB §127")
     norm = norm if norm else None
 
-    if is_live:
-        n_results = st.slider("Anzahl Quellen", 2, 10, 5,
-                              help="Mehr Quellen = langsamere aber bessere Antwort")
-    else:
-        # Database mode filters
-        rechtsgebiet = st.text_input(
-            "Rechtsgebiet",
-            placeholder="z.B. Strafrecht, Zivilrecht",
-        )
-        rechtsgebiet = rechtsgebiet if rechtsgebiet else None
-
-        st.subheader("Zeitraum")
-        col1, col2 = st.columns(2)
-        with col1:
-            datum_von = st.text_input("Von", placeholder="2020-01-01")
-        with col2:
-            datum_bis = st.text_input("Bis", placeholder="2026-12-31")
-        datum_von = datum_von if datum_von else None
-        datum_bis = datum_bis if datum_bis else None
-
-        n_results = st.slider("Anzahl Quellen", 3, 15, 8)
-
-        st.divider()
-        st.header("📊 Datenbank")
-        try:
-            from retrieval.vector_store import get_stats
-            stats = get_stats()
-            st.metric("Chunks in DB", stats["total_chunks"])
-            if stats["courts"]:
-                st.write("**Gerichte:**", ", ".join(stats["courts"][:10]))
-        except Exception:
-            st.info("Noch keine Daten. Starte Ingestion:\n```\npython ingestion/ingest_pipeline.py\n```")
+    n_results = st.slider("Anzahl Quellen", 2, 10, 5)
 
     st.divider()
-    st.caption(
-        "⚖️ Dieses Tool dient ausschließlich der juristischen Recherche "
-        "und stellt keine Rechtsberatung dar. Alle Angaben sind AI-gestützt "
-        "und müssen anhand der Originalquellen verifiziert werden."
+
+    # --- Document Upload ---
+    st.markdown("### Dokument analysieren")
+    uploaded_file = st.file_uploader(
+        "Anklageschrift, Strafantrag oder Bescheid hochladen",
+        type=["pdf", "txt"],
+        help="Das Dokument wird analysiert und Verteidigungsoptionen werden aufgezeigt.",
+    )
+    if uploaded_file:
+        st.success(f"{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
+        if st.button("Dokument analysieren", use_container_width=True):
+            st.session_state.analyze_document = True
+            st.session_state.uploaded_file_data = uploaded_file.getvalue()
+            st.session_state.uploaded_file_name = uploaded_file.name
+            st.rerun()
+
+    st.divider()
+
+    st.markdown("### So funktioniert's")
+    st.markdown("""
+1. Frage stellen — einfach oder komplex
+2. RIS wird durchsucht — Gesetze + Urteile
+3. AI analysiert und fasst zusammen
+4. Quellen direkt in RIS verifizieren
+    """)
+
+    st.divider()
+    st.markdown(
+        '<div class="disclaimer">'
+        "Dieses Tool dient ausschliesslich der juristischen Recherche und stellt "
+        "keine Rechtsberatung dar. Alle Angaben sind AI-gestützt und müssen anhand "
+        "der Originalquellen verifiziert werden. Keine Haftung für Richtigkeit oder "
+        "Vollständigkeit."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-# --- Main chat interface ---
-
+# --- Chat ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat history
-for msg in st.session_state.messages:
+# Show chat history
+for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if msg.get("gesetz_sources"):
+            with st.expander(f"{len(msg['gesetz_sources'])} Gesetze anzeigen"):
+                for g in msg["gesetz_sources"]:
+                    label = f"{g.get('kurztitel', '')} {g.get('paragraph', '')}"
+                    url = g.get("url", "")
+                    link = f"[{label}]({url})" if url else label
+                    st.markdown(f"**{link}**")
         if msg.get("sources"):
-            with st.expander(f"📚 {len(msg['sources'])} Quellen anzeigen"):
+            with st.expander(f"{len(msg['sources'])} Gerichtsentscheidungen anzeigen"):
                 for s in msg["sources"]:
                     url = s.get("url", "")
                     gz = s.get("geschaeftszahl", "")
                     link = f"[{gz}]({url})" if url else gz
-                    st.markdown(f"- **{s.get('gericht', '')} {link}** ({s.get('datum', '')})")
+                    st.markdown(f"**{s.get('gericht', '')} {link}** — {s.get('datum', '')}")
                     if s.get("text_preview"):
                         st.caption(s["text_preview"][:200] + "...")
+        # Action buttons for assistant messages
+        if msg["role"] == "assistant" and msg.get("content") and not msg["content"].startswith("Fehler"):
+            bcol1, bcol2 = st.columns(2)
+            with bcol1:
+                if st.button("Schriftsatz generieren", key=f"hist_brief_{idx}"):
+                    st.session_state.generate_schriftsatz_from = msg["content"]
+                    st.rerun()
+            with bcol2:
+                export_html = generate_export_html(st.session_state.messages)
+                st.download_button(
+                    "Recherche exportieren",
+                    export_html,
+                    file_name="recherche.html",
+                    mime="text/html",
+                    key=f"hist_export_{idx}",
+                )
 
-# Chat input
-if prompt := st.chat_input("Stelle eine juristische Frage..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+# Example questions if chat is empty
+if not st.session_state.messages:
+    st.markdown("#### Stellen Sie eine Frage zum österreichischen Recht")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown('<div class="category-header">Strafverteidigung</div>', unsafe_allow_html=True)
+        examples_defense = [
+            "Was passiert bei Diebstahl in Österreich?",
+            "Verteidigungsmöglichkeiten bei Körperverletzung?",
+            "Wie funktioniert Notwehr als Rechtfertigung?",
+            "Wann ist eine Tat verjährt?",
+            "Verteidigung gegen einen Betrugsvorwurf?",
+        ]
+        for ex in examples_defense:
+            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state.pending_question = ex
+                st.rerun()
+
+    with col2:
+        st.markdown('<div class="category-header">Aussagen & Verfahrensrecht</div>', unsafe_allow_html=True)
+        examples_process = [
+            "Welche Rechte habe ich bei einer Polizei-Vernehmung?",
+            "Muss ich bei der Polizei aussagen?",
+            "Was ist Diversion und wann bekommt man sie?",
+            "Wann bekomme ich eine bedingte Strafe?",
+            "Wie läuft eine Hauptverhandlung ab?",
+        ]
+        for ex in examples_process:
+            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state.pending_question = ex
+                st.rerun()
+
+# --- Handle Schriftsatz Generation ---
+if st.session_state.get("generate_schriftsatz_from"):
+    research_text = st.session_state.pop("generate_schriftsatz_from")
+
+    user_msg = "Schriftsatz generieren basierend auf der letzten Rechtsrecherche"
+    st.session_state.messages.append({"role": "user", "content": user_msg})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_msg)
 
     with st.chat_message("assistant"):
-        if is_live:
-            # --- LIVE MODE: Direct RIS API search ---
-            with st.spinner("🔍 Durchsuche RIS-Datenbank live..."):
-                try:
-                    from generation.live_search import live_search_and_answer
+        with st.spinner("Schriftsatz wird erstellt..."):
+            try:
+                from generation.schriftsatz import generate_schriftsatz
 
-                    response = live_search_and_answer(
-                        question=prompt,
+                schriftsatz = generate_schriftsatz(research_text)
+                st.markdown(schriftsatz)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": schriftsatz,
+                })
+            except Exception as e:
+                import traceback
+                error_msg = f"Fehler bei der Schriftsatz-Erstellung: {str(e)}"
+                st.error(error_msg)
+                st.code(traceback.format_exc())
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+# --- Handle Document Analysis ---
+if st.session_state.get("analyze_document"):
+    st.session_state.analyze_document = False
+    file_data = st.session_state.pop("uploaded_file_data", None)
+    file_name = st.session_state.pop("uploaded_file_name", "Dokument")
+
+    if file_data:
+        user_msg = f"Dokument-Analyse: {file_name}"
+        st.session_state.messages.append({"role": "user", "content": user_msg})
+        with st.chat_message("user"):
+            st.markdown(user_msg)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Dokument wird analysiert (ca. 30-60 Sekunden)..."):
+                try:
+                    from generation.document_analyzer import (
+                        extract_text_from_upload,
+                        analyze_document,
+                    )
+
+                    class _UploadedFileProxy:
+                        def __init__(self, data: bytes, name: str):
+                            self.name = name
+                            self.size = len(data)
+                            self._data = data
+                        def read(self):
+                            return self._data
+                        def getvalue(self):
+                            return self._data
+
+                    proxy = _UploadedFileProxy(file_data, file_name)
+                    doc_text = extract_text_from_upload(proxy)
+
+                    if not doc_text.strip():
+                        raise ValueError("Keine Textinhalte im Dokument gefunden.")
+
+                    with st.expander("Extrahierter Text (Vorschau)"):
+                        st.text(doc_text[:2000] + ("..." if len(doc_text) > 2000 else ""))
+
+                    response = analyze_document(
+                        document_text=doc_text,
                         applikation=applikation or "Justiz",
-                        norm=norm or "",
                         max_sources=n_results,
                     )
 
                     st.markdown(response.answer)
 
                     sources_data = []
+                    if response.extracted_charges:
+                        st.info(f"Erkannte Suchbegriffe: {response.extracted_charges}")
+
                     if response.sources:
-                        with st.expander(f"📚 {len(response.sources)} Quellen aus RIS"):
-                            st.caption(f"Suchbegriffe: *{response.query_used}*")
+                        with st.expander(f"{len(response.sources)} Quellen aus RIS"):
                             for s in response.sources:
+                                gz = s.geschaeftszahl
                                 if s.source_url:
-                                    st.markdown(f"**{s.gericht} [{s.geschaeftszahl}]({s.source_url})** — {s.datum}")
+                                    st.markdown(f"**{s.gericht} [{gz}]({s.source_url})** — {s.datum}")
                                 else:
-                                    st.markdown(f"**{s.gericht} {s.geschaeftszahl}** — {s.datum}")
+                                    st.markdown(f"**{s.gericht} {gz}** — {s.datum}")
                                 if s.normen:
                                     st.caption(f"Normen: {', '.join(s.normen[:5])}")
                                 if s.text_preview:
                                     st.caption(s.text_preview[:300] + "...")
                                 st.divider()
                                 sources_data.append({
-                                    "geschaeftszahl": s.geschaeftszahl,
+                                    "geschaeftszahl": gz,
                                     "gericht": s.gericht,
                                     "datum": s.datum,
                                     "url": s.source_url,
-                                    "text_preview": s.text_preview[:300],
+                                    "text_preview": s.text_preview[:300] if s.text_preview else "",
                                 })
 
                     st.session_state.messages.append({
@@ -163,86 +353,96 @@ if prompt := st.chat_input("Stelle eine juristische Frage..."):
                     })
 
                 except Exception as e:
-                    error_msg = f"Fehler: {str(e)}"
+                    import traceback
+                    error_msg = f"Fehler bei der Dokument-Analyse: {str(e)}"
                     st.error(error_msg)
+                    st.code(traceback.format_exc())
                     st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
-        else:
-            # --- DATABASE MODE: Vector search ---
-            with st.spinner("🔍 Durchsuche vorindexierte Rechtsprechung..."):
-                try:
-                    from generation.rag_chain import answer_legal_question
+# Handle pending question from example buttons
+pending = st.session_state.pop("pending_question", None)
+prompt = pending or st.chat_input("Stellen Sie eine Frage zum österreichischen Recht...")
 
-                    response = answer_legal_question(
-                        question=prompt,
-                        n_results=n_results,
-                        applikation=applikation,
-                        rechtsgebiet=rechtsgebiet,
-                        datum_von=datum_von,
-                        datum_bis=datum_bis,
-                        norm=norm,
-                    )
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-                    st.markdown(response.answer)
+    with st.chat_message("assistant"):
+        with st.spinner("Durchsuche Gesetze und Rechtsprechung..."):
+            try:
+                from generation.live_search import live_search_with_history
 
-                    if response.hallucinated_citations:
-                        st.warning(
-                            f"⚠️ Möglicherweise halluzinierte Zitate: "
-                            f"{', '.join(response.hallucinated_citations)}"
-                        )
-
-                    sources_data = []
-                    if response.sources:
-                        with st.expander(f"📚 {len(response.sources)} Quellen anzeigen"):
-                            for s in response.sources:
-                                if s.source_url:
-                                    st.markdown(f"**{s.gericht} [{s.geschaeftszahl}]({s.source_url})** — {s.datum}")
-                                else:
-                                    st.markdown(f"**{s.gericht} {s.geschaeftszahl}** — {s.datum}")
-                                st.caption(s.text[:300] + "..." if len(s.text) > 300 else s.text)
-                                st.divider()
-                                sources_data.append({
-                                    "geschaeftszahl": s.geschaeftszahl,
-                                    "gericht": s.gericht,
-                                    "datum": s.datum,
-                                    "url": s.source_url,
-                                    "text_preview": s.text[:300],
-                                })
-
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response.answer,
-                        "sources": sources_data,
+                history = []
+                for msg in st.session_state.messages[:-1]:
+                    history.append({
+                        "role": msg["role"],
+                        "content": msg["content"],
                     })
 
-                except Exception as e:
-                    error_msg = f"Fehler: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                response = live_search_with_history(
+                    question=prompt,
+                    history=history,
+                    applikation=applikation or "Justiz",
+                    norm=norm or "",
+                    max_sources=n_results,
+                )
 
-# --- Example questions ---
-st.divider()
-col1, col2, col3 = st.columns(3)
+                st.markdown(response.answer)
 
-with col1:
-    st.markdown("**Beispielfragen:**")
-    for ex in [
-        "Welche Voraussetzungen hat Notwehr nach § 3 StGB?",
-        "Schadenersatz bei Verkehrsunfällen — aktuelle Rechtsprechung?",
-        "Mietminderung bei Lärmbelästigung?",
-        "Betrug im Internet (§ 146 StGB) — Präzedenzfälle?",
-    ]:
-        st.caption(f"• {ex}")
+                sources_data = []
+                gesetz_data = []
 
-with col2:
-    st.markdown("**Tipps:**")
-    st.caption("• Juristische Fachbegriffe verwenden")
-    st.caption("• Relevante Paragraphen (§) nennen")
-    st.caption("• Filter in der Sidebar nutzen")
-    st.caption("• Quellen immer in RIS verifizieren")
+                if response.gesetz_sources:
+                    with st.expander(f"{len(response.gesetz_sources)} Gesetze aus RIS"):
+                        for g in response.gesetz_sources:
+                            label = f"{g.kurztitel} {g.paragraph}"
+                            if g.source_url:
+                                st.markdown(f"**[{label}]({g.source_url})**")
+                            else:
+                                st.markdown(f"**{label}**")
+                            if g.kundmachungsorgan:
+                                st.caption(g.kundmachungsorgan)
+                            st.divider()
+                            gesetz_data.append({
+                                "kurztitel": g.kurztitel,
+                                "paragraph": g.paragraph,
+                                "url": g.source_url,
+                            })
 
-with col3:
-    st.markdown("**Links:**")
-    st.caption("[RIS Rechtsinformationssystem](https://www.ris.bka.gv.at)")
-    st.caption("[RIS Judikatur](https://www.ris.bka.gv.at/Judikatur/)")
-    st.caption("[EUR-Lex](https://eur-lex.europa.eu)")
+                if response.sources:
+                    with st.expander(f"{len(response.sources)} Gerichtsentscheidungen aus RIS"):
+                        if response.query_used:
+                            st.caption(f"Suchbegriffe: {response.query_used}")
+                        for s in response.sources:
+                            gz = s.geschaeftszahl
+                            if s.source_url:
+                                st.markdown(f"**{s.gericht} [{gz}]({s.source_url})** — {s.datum}")
+                            else:
+                                st.markdown(f"**{s.gericht} {gz}** — {s.datum}")
+                            if s.normen:
+                                st.caption(f"Normen: {', '.join(s.normen[:5])}")
+                            if s.text_preview:
+                                st.caption(s.text_preview[:300] + "...")
+                            st.divider()
+                            sources_data.append({
+                                "geschaeftszahl": gz,
+                                "gericht": s.gericht,
+                                "datum": s.datum,
+                                "url": s.source_url,
+                                "text_preview": s.text_preview[:300] if s.text_preview else "",
+                            })
+
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": response.answer,
+                    "sources": sources_data,
+                    "gesetz_sources": gesetz_data,
+                })
+
+            except Exception as e:
+                import traceback
+                error_msg = f"Fehler: {str(e)}"
+                st.error(error_msg)
+                st.code(traceback.format_exc())
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})

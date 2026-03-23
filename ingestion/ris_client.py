@@ -4,11 +4,13 @@ Public REST API, no authentication required.
 Docs: https://data.bka.gv.at/ris/api/v2.6/Help
 License: CC BY 4.0 (commercial use allowed)
 """
+from __future__ import annotations
+
 import json
 import time
 import logging
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 
 import requests
 
@@ -20,7 +22,7 @@ PAGE_SIZES = {"Ten": 10, "Twenty": 20, "Fifty": 50, "OneHundred": 100}
 
 
 class RISClient:
-    """Thin wrapper around the RIS OGD API v2.6 Judikatur endpoint."""
+    """Thin wrapper around the RIS OGD API v2.6 Judikatur + Bundesrecht endpoints."""
 
     def __init__(self, delay: float = RIS_REQUEST_DELAY, cache_dir: Path = RAW_DIR):
         self.base_url = f"{RIS_API_BASE}/Judikatur"
@@ -137,7 +139,7 @@ class RISClient:
 
         logger.info(f"Total decisions yielded: {total_seen}")
 
-    def fetch_full_text(self, doc_ref: dict, fmt: str = "Html") -> str | None:
+    def fetch_full_text(self, doc_ref: dict, fmt: str = "Html") -> Optional[str]:
         """Fetch the full text of a decision from its document URLs.
 
         Args:
@@ -190,3 +192,103 @@ class RISClient:
         if isinstance(hits, dict):
             return int(hits.get("#text", "0"))
         return 0
+
+    # ------------------------------------------------------------------
+    # Bundesrecht (consolidated federal law) endpoint
+    # ------------------------------------------------------------------
+
+    def search_bundesrecht(
+        self,
+        suchworte: str = "",
+        norm: str = "",
+        seite: int = 1,
+        pro_seite: str = "Twenty",
+    ) -> dict:
+        """Search the Bundesrecht (consolidated federal law) endpoint.
+
+        Args:
+            suchworte: Full-text search terms
+            norm: Norm filter
+            seite: Page number (1-based)
+            pro_seite: Page size (Ten, Twenty, Fifty, OneHundred)
+        """
+        params = {
+            "Applikation": "BrKons",
+            "DokumenteProSeite": pro_seite,
+            "Seitennummer": seite,
+        }
+        if suchworte:
+            params["Suchworte"] = suchworte
+        if norm:
+            params["Norm"] = norm
+
+        url = f"{RIS_API_BASE}/Bundesrecht"
+        logger.info(f"RIS Bundesrecht request: page={seite}, search='{suchworte}'")
+
+        resp = self.session.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    def fetch_gesetz_text(self, doc_ref: dict) -> Optional[str]:
+        """Fetch the HTML full text of a Bundesrecht document.
+
+        Uses the same Dokumentliste/ContentReference structure as Judikatur.
+        Returns plain text extracted from HTML, or None.
+        """
+        html = self.fetch_full_text(doc_ref, fmt="Html")
+        if not html:
+            return None
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style"]):
+                tag.decompose()
+            return soup.get_text(separator="\n", strip=True)
+        except Exception as e:
+            logger.warning(f"Failed to parse Gesetzestext HTML: {e}")
+            return html
+
+    def extract_bundesrecht_meta(self, doc_ref: dict) -> dict:
+        """Extract metadata from a Bundesrecht OgdDocumentReference.
+
+        Returns dict with: kurztitel, paragraph, gesetzesnummer,
+        inkrafttretensdatum, kundmachungsorgan, source_url.
+        """
+        data = doc_ref.get("Data", {})
+        metadaten = data.get("Metadaten", {})
+        br = metadaten.get("Bundesrecht", {})
+        br_kons = br.get("BrKons", {})
+
+        kurztitel = str(br.get("Kurztitel", ""))
+        paragraph = str(br_kons.get("ArtikelParagraphAnlage", ""))
+        gesetzesnummer = str(br_kons.get("Gesetzesnummer", ""))
+        inkrafttreten = str(br_kons.get("Inkrafttretensdatum", ""))
+        if inkrafttreten and "T" in inkrafttreten:
+            inkrafttreten = inkrafttreten.split("T")[0]
+        kundmachung = str(br_kons.get("Kundmachungsorgan", ""))
+
+        # Build source URL from ContentReference
+        source_url = ""
+        try:
+            doc_list = data.get("Dokumentliste", {})
+            content_ref = doc_list.get("ContentReference", {})
+            if isinstance(content_ref, list):
+                content_ref = content_ref[0]
+            urls = content_ref.get("Urls", {}).get("ContentUrl", [])
+            if isinstance(urls, dict):
+                urls = [urls]
+            for u in urls:
+                if u.get("DataType", "").lower() == "html":
+                    source_url = u.get("Url", "")
+                    break
+        except Exception:
+            pass
+
+        return {
+            "kurztitel": kurztitel,
+            "paragraph": paragraph,
+            "gesetzesnummer": gesetzesnummer,
+            "inkrafttretensdatum": inkrafttreten,
+            "kundmachungsorgan": kundmachung,
+            "source_url": source_url,
+        }

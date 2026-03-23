@@ -1,4 +1,6 @@
 """Embedding wrapper for German legal text using sentence-transformers."""
+from __future__ import annotations
+
 import logging
 from typing import Optional
 
@@ -23,16 +25,7 @@ def get_model(model_name: str = None):
 
 
 def embed_texts(texts: list[str], model_name: str = None, batch_size: int = 32) -> list[list[float]]:
-    """Embed a list of texts and return embeddings as lists of floats.
-
-    Args:
-        texts: List of text strings to embed
-        model_name: Override model name (uses config default if None)
-        batch_size: Batch size for encoding
-
-    Returns:
-        List of embedding vectors (each a list of floats)
-    """
+    """Embed a list of texts and return embeddings as lists of floats."""
     if not texts:
         return []
 
@@ -46,7 +39,6 @@ def embed_texts(texts: list[str], model_name: str = None, batch_size: int = 32) 
         normalize_embeddings=True,
     )
 
-    # Convert numpy arrays to lists for ChromaDB compatibility
     return [emb.tolist() for emb in embeddings]
 
 

@@ -7,12 +7,17 @@ load_dotenv()
 
 
 def _get_secret(key: str, default: str = "") -> str:
-    """Get secret from Streamlit Cloud secrets or environment."""
+    """Get secret from environment or Streamlit Cloud secrets."""
+    # Prefer .env / environment variable
+    env_val = os.getenv(key, "")
+    if env_val:
+        return env_val
+    # Fallback to Streamlit secrets (for cloud deployment)
     try:
         import streamlit as st
-        return st.secrets.get(key, os.getenv(key, default))
+        return st.secrets.get(key, default)
     except Exception:
-        return os.getenv(key, default)
+        return default
 
 
 # Paths
@@ -54,4 +59,4 @@ CLAUDE_TEMPERATURE = 0
 MAX_CONTEXT_CHUNKS = 8
 
 # Streamlit
-STREAMLIT_PAGE_TITLE = "RIS Legal AI - Österreichische Rechtsprechung"
+STREAMLIT_PAGE_TITLE = "RIS Legal AI - Österreichische Gesetze & Rechtsprechung"

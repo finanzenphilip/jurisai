@@ -1,4 +1,6 @@
 """Anthropic Claude API wrapper for legal RAG generation."""
+from __future__ import annotations
+
 import logging
 from typing import Optional
 
@@ -26,20 +28,8 @@ def generate(
     temperature: float = CLAUDE_TEMPERATURE,
     max_tokens: int = 4096,
 ) -> str:
-    """Generate a response using Claude.
-
-    Args:
-        user_prompt: The user message (includes RAG context)
-        system_prompt: System instructions
-        model: Claude model to use
-        temperature: Sampling temperature (0 for legal = deterministic)
-        max_tokens: Max response tokens
-
-    Returns:
-        Claude's text response
-    """
+    """Generate a response using Claude."""
     client = get_client()
-
     logger.info(f"Generating response with {model} (temp={temperature})")
 
     message = client.messages.create(
@@ -62,18 +52,7 @@ def generate_with_history(
     temperature: float = CLAUDE_TEMPERATURE,
     max_tokens: int = 4096,
 ) -> str:
-    """Generate with full conversation history.
-
-    Args:
-        messages: List of {"role": "user"|"assistant", "content": str}
-        system_prompt: System instructions
-        model: Claude model to use
-        temperature: Sampling temperature
-        max_tokens: Max response tokens
-
-    Returns:
-        Claude's text response
-    """
+    """Generate with full conversation history."""
     client = get_client()
 
     message = client.messages.create(

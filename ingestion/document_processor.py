@@ -1,8 +1,10 @@
 """Process RIS court decisions: parse HTML, extract metadata, chunk text."""
+from __future__ import annotations
+
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List, Dict
 
 from bs4 import BeautifulSoup
 

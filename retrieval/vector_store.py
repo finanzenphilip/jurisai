@@ -1,4 +1,6 @@
 """ChromaDB vector store wrapper for legal document retrieval."""
+from __future__ import annotations
+
 import logging
 from typing import Optional
 
@@ -34,24 +36,9 @@ def search(
     applikation: Optional[str] = None,
     norm: Optional[str] = None,
 ) -> dict:
-    """Search the vector store with optional metadata filters.
-
-    Args:
-        query_embedding: Query vector
-        n_results: Number of results to return
-        gericht: Filter by court name
-        rechtsgebiet: Filter by legal area
-        datum_von: Filter decisions after this date (YYYY-MM-DD)
-        datum_bis: Filter decisions before this date (YYYY-MM-DD)
-        applikation: Filter by RIS application
-        norm: Filter by referenced norm (substring match)
-
-    Returns:
-        ChromaDB query result dict with ids, documents, metadatas, distances
-    """
+    """Search the vector store with optional metadata filters."""
     collection = get_collection()
 
-    # Build metadata filter
     where_clauses = []
     if gericht:
         where_clauses.append({"gericht": {"$eq": gericht}})
@@ -70,7 +57,6 @@ def search(
     elif len(where_clauses) > 1:
         where = {"$and": where_clauses}
 
-    # Also filter by norm in document text if specified
     where_document = None
     if norm:
         where_document = {"$contains": norm}
@@ -91,7 +77,6 @@ def get_stats() -> dict:
     collection = get_collection()
     count = collection.count()
 
-    # Sample some metadata to get unique courts/areas
     sample = collection.peek(limit=min(count, 100))
 
     courts = set()
