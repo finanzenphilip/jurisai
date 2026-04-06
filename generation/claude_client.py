@@ -6,7 +6,7 @@ from typing import Optional
 
 import anthropic
 
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, CLAUDE_TEMPERATURE
+from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, CLAUDE_MODEL_FAST, CLAUDE_TEMPERATURE, CLAUDE_MAX_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def generate(
     system_prompt: str,
     model: str = CLAUDE_MODEL,
     temperature: float = CLAUDE_TEMPERATURE,
-    max_tokens: int = 4096,
+    max_tokens: int = CLAUDE_MAX_TOKENS,
 ) -> str:
     """Generate a response using Claude."""
     client = get_client()
@@ -50,7 +50,7 @@ def generate_with_history(
     system_prompt: str,
     model: str = CLAUDE_MODEL,
     temperature: float = CLAUDE_TEMPERATURE,
-    max_tokens: int = 4096,
+    max_tokens: int = CLAUDE_MAX_TOKENS,
 ) -> str:
     """Generate with full conversation history."""
     client = get_client()

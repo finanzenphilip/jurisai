@@ -164,10 +164,12 @@ with st.sidebar:
     st.divider()
     st.markdown(
         '<div class="disclaimer">'
-        "Dieses Tool dient ausschliesslich der juristischen Recherche und stellt "
-        "keine Rechtsberatung dar. Alle Angaben sind AI-gestützt und müssen anhand "
-        "der Originalquellen verifiziert werden. Keine Haftung für Richtigkeit oder "
-        "Vollständigkeit."
+        "<strong>Hinweis:</strong> Dieses Tool dient ausschliesslich der juristischen "
+        "Recherche und stellt keine Rechtsberatung dar. Alle Angaben sind AI-gestützt "
+        "und <strong>müssen anhand der Originalquellen im RIS verifiziert werden</strong>. "
+        "Geschäftszahlen und Paragraphen können Fehler enthalten. "
+        "Keine Haftung für Richtigkeit, Vollständigkeit oder Aktualität. "
+        "Für verbindliche Auskünfte konsultieren Sie einen Rechtsanwalt."
         "</div>",
         unsafe_allow_html=True,
     )
@@ -220,29 +222,51 @@ if not st.session_state.messages:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown('<div class="category-header">Strafverteidigung</div>', unsafe_allow_html=True)
-        examples_defense = [
+        st.markdown('<div class="category-header">Strafrecht & Verteidigung</div>', unsafe_allow_html=True)
+        examples_straf = [
             "Was passiert bei Diebstahl in Österreich?",
             "Verteidigungsmöglichkeiten bei Körperverletzung?",
-            "Wie funktioniert Notwehr als Rechtfertigung?",
+            "Was ist Diversion und wann bekommt man sie?",
             "Wann ist eine Tat verjährt?",
-            "Verteidigung gegen einen Betrugsvorwurf?",
         ]
-        for ex in examples_defense:
+        for ex in examples_straf:
+            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state.pending_question = ex
+                st.rerun()
+
+        st.markdown('<div class="category-header">Zivilrecht & Mietrecht</div>', unsafe_allow_html=True)
+        examples_zivil = [
+            "Welche Kündigungsfristen gelten im Mietrecht?",
+            "Wann verjähren Schadenersatzansprüche?",
+            "Was sind meine Rechte als Mieter bei Mängeln?",
+            "Wie funktioniert eine Klage auf Unterlassung?",
+        ]
+        for ex in examples_zivil:
             if st.button(ex, key=f"ex_{ex}", use_container_width=True):
                 st.session_state.pending_question = ex
                 st.rerun()
 
     with col2:
-        st.markdown('<div class="category-header">Aussagen & Verfahrensrecht</div>', unsafe_allow_html=True)
-        examples_process = [
-            "Welche Rechte habe ich bei einer Polizei-Vernehmung?",
-            "Muss ich bei der Polizei aussagen?",
-            "Was ist Diversion und wann bekommt man sie?",
-            "Wann bekomme ich eine bedingte Strafe?",
-            "Wie läuft eine Hauptverhandlung ab?",
+        st.markdown('<div class="category-header">Arbeitsrecht & Sozialrecht</div>', unsafe_allow_html=True)
+        examples_arbeit = [
+            "Welche Kündigungsfristen gelten für Angestellte?",
+            "Wann ist eine Entlassung gerechtfertigt?",
+            "Wie funktioniert Abfertigung Neu?",
+            "Welche Ansprüche habe ich bei Dienstverhinderung?",
         ]
-        for ex in examples_process:
+        for ex in examples_arbeit:
+            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state.pending_question = ex
+                st.rerun()
+
+        st.markdown('<div class="category-header">Verwaltungs- & Verfahrensrecht</div>', unsafe_allow_html=True)
+        examples_verwaltung = [
+            "Wie lege ich Beschwerde gegen einen Bescheid ein?",
+            "Welche Rechte habe ich bei einer Polizei-Vernehmung?",
+            "Welche Fristen gelten im Verwaltungsverfahren?",
+            "Wann ist ein Verwaltungsakt nichtig?",
+        ]
+        for ex in examples_verwaltung:
             if st.button(ex, key=f"ex_{ex}", use_container_width=True):
                 st.session_state.pending_question = ex
                 st.rerun()

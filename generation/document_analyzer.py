@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 
 from generation.claude_client import generate
+from config import CLAUDE_MODEL_FAST, CLAUDE_MAX_TOKENS
 from generation.prompts import SYSTEM_PROMPT
 from generation.live_search import LiveSource, extract_search_terms
 from ingestion.ris_client import RISClient
@@ -207,7 +208,7 @@ def _search_ris_for_document(
                     sections = parse_html_decision(full_html)
                     full_text = sections.get("begruendung") or sections.get("full_text", "")
 
-                text_for_context = full_text[:3000] if full_text else f"Entscheidung {gz}"
+                text_for_context = full_text[:5000] if full_text else f"Entscheidung {gz}"
 
                 sources.append(LiveSource(
                     geschaeftszahl=gz,
@@ -260,6 +261,7 @@ def analyze_document(
     extracted_terms = generate(
         user_prompt=extraction_prompt,
         system_prompt="Du bist ein juristischer Experte. Antworte nur mit Suchbegriffen.",
+        model=CLAUDE_MODEL_FAST,
         max_tokens=200,
     )
     logger.info(f"Extracted terms: {extracted_terms}")
@@ -298,7 +300,7 @@ def analyze_document(
     answer = generate(
         user_prompt=analysis_prompt,
         system_prompt=SYSTEM_PROMPT,
-        max_tokens=4096,
+        max_tokens=CLAUDE_MAX_TOKENS,
     )
 
     return DocumentAnalysisResponse(

@@ -63,7 +63,7 @@ def extract_search_terms(question: str) -> str:
     paragraphs = re.findall(r'§\s*\d+[a-z]?', clean)
 
     # Extract legal code references
-    codes = re.findall(r'\b(?:StGB|StPO|ABGB|ZPO|UGB|GmbHG|AktG|VStG|AVG|BVergG|MRG|WEG|ASVG|KSchG|GewO|DSG|DSGVO)\b', clean, re.IGNORECASE)
+    codes = re.findall(r'\b(?:StGB|StPO|ABGB|ZPO|UGB|GmbHG|AktG|VStG|AVG|BVergG|MRG|WEG|ASVG|KSchG|GewO|DSG|DSGVO|EStG|BAO|FinStrG|IO|AußStrG|SMG|VbVG|VerG|UStG|KStG|BWG|WAG|WpHG|BörseG|FMABG|InvFG|AIFMG|GSpG|TKG|MedienG|StVO|FSG|KFG|EheG|EPG|KindNamRÄG|ABGB|PHG|FernFinG|FAGG|VKrG|HIKrG|AltFG|ArbVG|AngG|AZG|UrlG|MuttSchG|KBGG|BMSVG|GlBG|BEinstG|AuslBG)\b', clean, re.IGNORECASE)
 
     # Split into words and filter stopwords
     words = clean.lower().split()
@@ -260,7 +260,7 @@ def _search_bundesrecht_sources(
                 if not gesetz_text:
                     gesetz_text = f"{kurztitel} {paragraph}"
 
-                text_for_context = gesetz_text[:2000]
+                text_for_context = gesetz_text[:4000]
 
                 sources.append(GesetzSource(
                     kurztitel=kurztitel,
@@ -315,7 +315,7 @@ def _search_ris_sources(
                 applikation=applikation,
                 suchworte=attempt,
                 norm=norm,
-                max_pages=1,
+                max_pages=2,
             ):
                 if count >= max_sources:
                     break
@@ -331,7 +331,7 @@ def _search_ris_sources(
                     sections = parse_html_decision(full_html)
                     full_text = sections.get("begruendung") or sections.get("full_text", "")
 
-                text_for_context = full_text[:3000] if full_text else f"Entscheidung {gz}"
+                text_for_context = full_text[:5000] if full_text else f"Entscheidung {gz}"
 
                 sources.append(LiveSource(
                     geschaeftszahl=gz,
