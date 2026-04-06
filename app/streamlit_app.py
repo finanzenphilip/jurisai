@@ -14,240 +14,415 @@ st.set_page_config(
     page_title="JurisAI — Juristische Recherche",
     page_icon="https://em-content.zobj.net/source/apple/391/balance-scale_2696-fe0f.png",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# --- Professional CSS ---
+# --- Premium CSS with Animations ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-    /* Global */
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    /* ═══ ANIMATIONS ═══ */
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-6px); }
+    }
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    @keyframes scaleIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes slideInLeft {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
 
-    /* Header */
-    .main-header {
-        padding: 1.2rem 0 1rem 0;
-        border-bottom: 1px solid #e2e6ea;
+    /* ═══ GLOBAL ═══ */
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, sans-serif !important;
+    }
+    .stApp {
+        background: linear-gradient(135deg, #0a0f1c 0%, #0f1629 50%, #0a1628 100%);
+    }
+    .main .block-container {
+        max-width: 900px;
+        padding: 1rem 1.5rem;
+    }
+
+    /* ═══ HEADER ═══ */
+    .hero-header {
+        text-align: center;
+        padding: 2rem 1rem 1.5rem;
         margin-bottom: 1.5rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
+        animation: fadeInUp 0.8s ease-out;
+        position: relative;
     }
-    .logo-icon {
+    .hero-header::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 10%;
+        right: 10%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(99,102,241,0.4), transparent);
+    }
+    .hero-logo {
+        font-size: 2.8rem;
+        margin-bottom: 0.5rem;
+        animation: float 3s ease-in-out infinite;
+        display: inline-block;
+    }
+    .hero-title {
         font-size: 2rem;
-        line-height: 1;
-    }
-    .header-text h1 {
-        color: #0f172a;
-        font-size: 1.6rem;
-        font-weight: 700;
+        font-weight: 800;
+        background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa);
+        background-size: 200% 200%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: gradientShift 4s ease infinite;
+        letter-spacing: -1px;
         margin: 0;
-        letter-spacing: -0.5px;
     }
-    .header-text p {
+    .hero-subtitle {
         color: #64748b;
-        font-size: 0.85rem;
-        margin: 0.2rem 0 0 0;
+        font-size: 0.9rem;
+        margin-top: 0.4rem;
         font-weight: 400;
     }
-    .header-badge {
+    .hero-badge {
         display: inline-block;
-        background: #dbeafe;
-        color: #1e40af;
+        background: rgba(99,102,241,0.15);
+        color: #818cf8;
         font-size: 0.65rem;
         font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 10px;
-        margin-left: 8px;
-        vertical-align: middle;
+        padding: 3px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(99,102,241,0.3);
+        margin-top: 0.6rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
     }
 
-    /* Sidebar */
+    /* ═══ SIDEBAR ═══ */
     section[data-testid="stSidebar"] {
-        background-color: #f8fafc;
-        border-right: 1px solid #e2e8f0;
+        background: rgba(15,22,41,0.98);
+        backdrop-filter: blur(20px);
+        border-right: 1px solid rgba(99,102,241,0.15);
     }
     section[data-testid="stSidebar"] h1,
     section[data-testid="stSidebar"] h2,
     section[data-testid="stSidebar"] h3 {
-        color: #0f172a;
-        font-size: 0.9rem;
+        color: #c7d2fe;
+        font-size: 0.85rem;
         font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    section[data-testid="stSidebar"] label {
+        color: #94a3b8 !important;
     }
 
-    /* Chat messages */
-    .stChatMessage { max-width: 900px; }
+    /* ═══ CHAT MESSAGES ═══ */
+    .stChatMessage {
+        max-width: 900px;
+        animation: fadeIn 0.4s ease-out;
+    }
+    [data-testid="stChatMessageContent"] {
+        background: rgba(30,41,69,0.6) !important;
+        border: 1px solid rgba(99,102,241,0.12) !important;
+        backdrop-filter: blur(10px);
+        border-radius: 12px !important;
+        color: #e2e8f0 !important;
+    }
+    [data-testid="stChatMessageContent"] p,
+    [data-testid="stChatMessageContent"] li,
+    [data-testid="stChatMessageContent"] span {
+        color: #e2e8f0 !important;
+    }
+    [data-testid="stChatMessageContent"] h1,
+    [data-testid="stChatMessageContent"] h2,
+    [data-testid="stChatMessageContent"] h3 {
+        color: #c7d2fe !important;
+    }
+    [data-testid="stChatMessageContent"] strong {
+        color: #a5b4fc !important;
+    }
+    [data-testid="stChatMessageContent"] code {
+        background: rgba(99,102,241,0.15) !important;
+        color: #c7d2fe !important;
+    }
+    [data-testid="stChatMessageContent"] a {
+        color: #818cf8 !important;
+    }
 
-    /* Buttons */
+    /* ═══ BUTTONS ═══ */
     .stButton > button {
-        border-radius: 8px;
+        border-radius: 10px;
         font-weight: 500;
         font-size: 0.85rem;
-        transition: all 0.15s;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 1px solid rgba(99,102,241,0.2);
+        background: rgba(30,41,69,0.5);
+        color: #c7d2fe;
+        backdrop-filter: blur(10px);
+    }
+    .stButton > button:hover {
+        background: rgba(99,102,241,0.2);
+        border-color: rgba(99,102,241,0.5);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 15px rgba(99,102,241,0.15);
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        color: white;
+        border: none;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #818cf8, #6366f1);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 20px rgba(99,102,241,0.3);
     }
 
-    /* Example cards */
-    .example-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 0.7rem 1rem;
-        cursor: pointer;
-        transition: all 0.15s;
-        font-size: 0.88rem;
-        color: #334155;
-        line-height: 1.4;
-    }
-    .example-card:hover {
-        background: #eff6ff;
-        border-color: #3b82f6;
-        color: #1e40af;
-    }
-
-    /* Example buttons */
+    /* ═══ EXAMPLE CARDS ═══ */
     div[data-testid="column"] .stButton > button {
         text-align: left;
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        color: #334155;
-        padding: 0.65rem 1rem;
-        border-radius: 10px;
+        background: rgba(30,41,69,0.4);
+        border: 1px solid rgba(99,102,241,0.12);
+        color: #94a3b8;
+        padding: 0.75rem 1rem;
+        border-radius: 12px;
         font-size: 0.88rem;
+        backdrop-filter: blur(10px);
     }
     div[data-testid="column"] .stButton > button:hover {
-        background-color: #eff6ff;
-        border-color: #3b82f6;
-        color: #1e40af;
+        background: rgba(99,102,241,0.12);
+        border-color: rgba(99,102,241,0.4);
+        color: #c7d2fe;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(99,102,241,0.1);
     }
 
-    /* Source cards */
-    .source-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
-        font-size: 0.85rem;
-    }
-    .source-card .gz { color: #1e40af; font-weight: 600; }
-    .source-card .meta { color: #64748b; font-size: 0.78rem; margin-top: 2px; }
-    .source-card .preview { color: #475569; font-size: 0.8rem; margin-top: 6px; line-height: 1.4; }
-
-    /* Disclaimer */
-    .disclaimer {
-        background-color: #fffbeb;
-        border: 1px solid #fde68a;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        font-size: 0.78rem;
-        color: #92400e;
-        margin-top: 1rem;
-        line-height: 1.5;
-    }
-
-    /* Category headers */
-    .category-header {
-        color: #0f172a;
+    /* ═══ CATEGORY HEADERS ═══ */
+    .cat-header {
+        color: #818cf8;
         font-weight: 600;
-        font-size: 0.88rem;
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.3rem;
-        border-bottom: 2px solid #e2e8f0;
+        font-size: 0.82rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid rgba(99,102,241,0.2);
         display: flex;
         align-items: center;
         gap: 6px;
+        letter-spacing: 0.3px;
+        animation: slideInLeft 0.6s ease-out;
     }
 
-    /* Welcome section */
-    .welcome-section {
+    /* ═══ WELCOME SECTION ═══ */
+    .welcome {
         text-align: center;
-        padding: 2rem 0 1.5rem 0;
+        padding: 1.5rem 0 1rem;
+        animation: fadeInUp 0.6s ease-out;
     }
-    .welcome-section h2 {
-        color: #0f172a;
+    .welcome h2 {
+        color: #e2e8f0;
         font-size: 1.3rem;
         font-weight: 600;
         margin-bottom: 0.3rem;
     }
-    .welcome-section p {
+    .welcome p {
         color: #64748b;
-        font-size: 0.9rem;
+        font-size: 0.88rem;
     }
 
-    /* Stats bar */
-    .stats-bar {
+    /* ═══ STATS BAR ═══ */
+    .stats-row {
         display: flex;
         justify-content: center;
-        gap: 2rem;
-        padding: 0.8rem 0;
+        gap: 1.5rem;
+        padding: 1rem 0;
         margin-bottom: 1.5rem;
+        animation: fadeInUp 0.8s ease-out 0.2s both;
     }
-    .stats-bar .stat {
+    .stat-card {
         text-align: center;
+        padding: 0.8rem 1.2rem;
+        background: rgba(30,41,69,0.4);
+        border: 1px solid rgba(99,102,241,0.12);
+        border-radius: 12px;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        min-width: 100px;
     }
-    .stats-bar .stat-num {
-        font-size: 1.1rem;
+    .stat-card:hover {
+        border-color: rgba(99,102,241,0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(99,102,241,0.08);
+    }
+    .stat-num {
+        font-size: 1.2rem;
         font-weight: 700;
-        color: #1e40af;
+        background: linear-gradient(135deg, #818cf8, #6366f1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
-    .stats-bar .stat-label {
-        font-size: 0.7rem;
-        color: #94a3b8;
+    .stat-label {
+        font-size: 0.65rem;
+        color: #64748b;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.8px;
+        margin-top: 2px;
     }
 
-    /* Hide Streamlit branding */
+    /* ═══ DISCLAIMER ═══ */
+    .disclaimer {
+        background: rgba(99,102,241,0.06);
+        border: 1px solid rgba(99,102,241,0.15);
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-top: 1rem;
+        line-height: 1.5;
+    }
+    .disclaimer strong { color: #818cf8; }
+
+    /* ═══ EXPANDER ═══ */
+    .streamlit-expanderHeader {
+        background: rgba(30,41,69,0.4) !important;
+        border-radius: 10px !important;
+        color: #94a3b8 !important;
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid rgba(99,102,241,0.12) !important;
+        border-radius: 10px !important;
+        background: rgba(15,22,41,0.4) !important;
+    }
+
+    /* ═══ INPUTS ═══ */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div,
+    [data-testid="stChatInput"] textarea {
+        background: rgba(30,41,69,0.6) !important;
+        border: 1px solid rgba(99,102,241,0.2) !important;
+        color: #e2e8f0 !important;
+        border-radius: 10px !important;
+    }
+    .stTextInput > div > div > input:focus,
+    [data-testid="stChatInput"] textarea:focus {
+        border-color: rgba(99,102,241,0.5) !important;
+        box-shadow: 0 0 0 2px rgba(99,102,241,0.1) !important;
+    }
+    [data-testid="stChatInput"] {
+        background: rgba(15,22,41,0.8) !important;
+        border: 1px solid rgba(99,102,241,0.15) !important;
+        border-radius: 12px !important;
+        backdrop-filter: blur(10px);
+    }
+
+    /* ═══ SLIDER ═══ */
+    .stSlider > div > div > div > div {
+        background: #6366f1 !important;
+    }
+
+    /* ═══ DIVIDER ═══ */
+    hr { border-color: rgba(99,102,241,0.1) !important; }
+
+    /* ═══ POWERED BY ═══ */
+    .powered {
+        text-align: center;
+        font-size: 0.68rem;
+        color: #475569;
+        padding: 0.8rem 0;
+        letter-spacing: 0.3px;
+    }
+
+    /* ═══ HIDE STREAMLIT ═══ */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
     header { visibility: hidden; }
 
-    /* New chat button */
-    .new-chat-btn {
-        background: #0f172a;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.6rem 1rem;
-        font-size: 0.85rem;
-        font-weight: 500;
-        cursor: pointer;
-        width: 100%;
-        transition: all 0.15s;
+    /* ═══ LIVE INDICATOR ═══ */
+    .live-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: #22c55e;
+        border-radius: 50%;
+        margin-right: 6px;
+        animation: pulse 2s ease-in-out infinite;
+        box-shadow: 0 0 8px rgba(34,197,94,0.4);
     }
-    .new-chat-btn:hover { background: #1e293b; }
 
-    /* Powered by */
-    .powered-by {
-        text-align: center;
-        font-size: 0.7rem;
-        color: #94a3b8;
-        padding: 0.5rem 0;
+    /* ═══ MOBILE RESPONSIVE ═══ */
+    @media (max-width: 768px) {
+        .main .block-container {
+            padding: 0.8rem 1rem;
+        }
+        .hero-title { font-size: 1.5rem; }
+        .hero-logo { font-size: 2.2rem; }
+        .hero-subtitle { font-size: 0.8rem; }
+        .stats-row {
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            min-width: 80px;
+            padding: 0.6rem 0.8rem;
+        }
+        .stat-num { font-size: 1rem; }
+        .stChatMessage { max-width: 100%; }
+        div[data-testid="column"] .stButton > button {
+            font-size: 0.82rem;
+            padding: 0.6rem 0.8rem;
+        }
+    }
+    @media (max-width: 480px) {
+        .hero-header { padding: 1.2rem 0.5rem 1rem; }
+        .hero-title { font-size: 1.3rem; }
+        .stats-row { gap: 0.5rem; }
+        .stat-card { min-width: 70px; }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- Header ---
 st.markdown("""
-<div class="main-header">
-    <div class="logo-icon">&#9878;&#65039;</div>
-    <div class="header-text">
-        <h1>JurisAI <span class="header-badge">BETA</span></h1>
-        <p>Juristische Recherche &mdash; Gesetze, Rechtsprechung &amp; Analyse</p>
-    </div>
+<div class="hero-header">
+    <div class="hero-logo">&#9878;&#65039;</div>
+    <div class="hero-title">JurisAI</div>
+    <div class="hero-subtitle">Juristische Recherche mit KI — Gesetze, Rechtsprechung &amp; Analyse</div>
+    <div class="hero-badge"><span class="live-dot"></span>Live RIS-Datenbank</div>
 </div>
 """, unsafe_allow_html=True)
 
 # --- Sidebar ---
 with st.sidebar:
-    # New chat button
     if st.button("Neue Recherche", use_container_width=True, type="primary"):
         st.session_state.messages = []
         st.rerun()
 
     st.divider()
-
     st.markdown("### Suchfilter")
 
     gericht_options = ["Alle Gerichte"] + list(COURT_APPS.keys())
@@ -255,23 +430,20 @@ with st.sidebar:
         "Gericht",
         gericht_options,
         format_func=lambda x: f"{x} — {COURT_APPS[x]}" if x in COURT_APPS else x,
-        help="Wählen Sie ein spezifisches Gericht oder suchen Sie in allen.",
     )
     applikation = selected_app if selected_app != "Alle Gerichte" else None
 
-    norm = st.text_input("Norm / Paragraph", placeholder="z.B. StGB §127", help="Optional: Suche auf bestimmte Normen einschränken")
+    norm = st.text_input("Norm / Paragraph", placeholder="z.B. StGB §127")
     norm = norm if norm else None
 
-    n_results = st.slider("Quellenanzahl", 2, 10, 5, help="Mehr Quellen = gründlichere Recherche, aber langsamer")
+    n_results = st.slider("Quellenanzahl", 2, 10, 5)
 
     st.divider()
-
-    # --- Document Upload ---
     st.markdown("### Dokument-Analyse")
     uploaded_file = st.file_uploader(
         "PDF oder TXT hochladen",
         type=["pdf", "txt"],
-        help="Anklageschriften, Strafanträge, Bescheide, Verträge — werden analysiert und rechtlich eingeordnet.",
+        help="Anklageschriften, Bescheide, Verträge analysieren",
     )
     if uploaded_file:
         st.success(f"{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
@@ -282,49 +454,44 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-
-    with st.expander("So funktioniert's", expanded=False):
+    with st.expander("So funktioniert's"):
         st.markdown("""
-**1.** Frage eingeben — einfach oder komplex
+**1.** Rechtsfrage eingeben
 
-**2.** RIS-Datenbank wird durchsucht (Gesetze + Urteile)
+**2.** RIS-Datenbank wird durchsucht
 
-**3.** AI analysiert Quellen und fasst zusammen
+**3.** KI analysiert Quellen
 
-**4.** Quellen direkt im RIS verifizieren
-
-**5.** Optional: Schriftsatz generieren lassen
+**4.** Quellen im RIS verifizieren
         """)
 
     st.markdown(
         '<div class="disclaimer">'
         "<strong>Hinweis:</strong> Dieses Tool dient der juristischen "
-        "Recherche und stellt keine Rechtsberatung dar. Alle Angaben sind AI-gestützt "
-        "und <strong>müssen anhand der Originalquellen verifiziert werden</strong>. "
+        "Recherche und stellt keine Rechtsberatung dar. Alle Angaben "
+        "<strong>müssen anhand der Originalquellen verifiziert werden</strong>. "
         "Keine Haftung für Richtigkeit oder Vollständigkeit."
         "</div>",
         unsafe_allow_html=True,
     )
-
-    st.markdown('<div class="powered-by">Powered by Claude AI + RIS OGD API</div>', unsafe_allow_html=True)
+    st.markdown('<div class="powered">Powered by Claude AI + RIS OGD API v2.6</div>', unsafe_allow_html=True)
 
 # --- Chat ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Show chat history
 for idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         if msg.get("gesetz_sources"):
-            with st.expander(f"Gesetze ({len(msg['gesetz_sources'])})", expanded=False):
+            with st.expander(f"Gesetze ({len(msg['gesetz_sources'])})"):
                 for g in msg["gesetz_sources"]:
                     label = f"{g.get('kurztitel', '')} {g.get('paragraph', '')}"
                     url = g.get("url", "")
                     link = f"[{label}]({url})" if url else label
                     st.markdown(f"**{link}**")
         if msg.get("sources"):
-            with st.expander(f"Rechtsprechung ({len(msg['sources'])})", expanded=False):
+            with st.expander(f"Rechtsprechung ({len(msg['sources'])})"):
                 for s in msg["sources"]:
                     url = s.get("url", "")
                     gz = s.get("geschaeftszahl", "")
@@ -332,201 +499,124 @@ for idx, msg in enumerate(st.session_state.messages):
                     st.markdown(f"**{s.get('gericht', '')} {link}** — {s.get('datum', '')}")
                     if s.get("text_preview"):
                         st.caption(s["text_preview"][:200] + "...")
-        # Action buttons
         if msg["role"] == "assistant" and msg.get("content") and not msg["content"].startswith("Fehler"):
-            bcol1, bcol2, bcol3 = st.columns([1, 1, 1])
+            bcol1, bcol2 = st.columns(2)
             with bcol1:
-                if st.button("Schriftsatz", key=f"hist_brief_{idx}", use_container_width=True):
+                if st.button("Schriftsatz", key=f"b_{idx}", use_container_width=True):
                     st.session_state.generate_schriftsatz_from = msg["content"]
                     st.rerun()
             with bcol2:
                 export_html = generate_export_html(st.session_state.messages)
-                st.download_button(
-                    "Export HTML",
-                    export_html,
-                    file_name="recherche.html",
-                    mime="text/html",
-                    key=f"hist_export_{idx}",
-                    use_container_width=True,
-                )
-            with bcol3:
-                pass  # placeholder for future features
+                st.download_button("Export", export_html, file_name="recherche.html", mime="text/html", key=f"e_{idx}", use_container_width=True)
 
-# Example questions if chat is empty
+# --- Welcome Screen ---
 if not st.session_state.messages:
     st.markdown("""
-    <div class="welcome-section">
+    <div class="welcome">
         <h2>Stellen Sie eine Frage zum österreichischen Recht</h2>
-        <p>JurisAI durchsucht das RIS (Bundesgesetze + Rechtsprechung) und analysiert die Ergebnisse.</p>
+        <p>JurisAI durchsucht das RIS live und analysiert Gesetze &amp; Rechtsprechung</p>
     </div>
-    <div class="stats-bar">
-        <div class="stat"><div class="stat-num">500K+</div><div class="stat-label">Gerichtsentscheidungen</div></div>
-        <div class="stat"><div class="stat-num">Live</div><div class="stat-label">RIS-Datenbank</div></div>
-        <div class="stat"><div class="stat-num">6</div><div class="stat-label">Rechtsgebiete</div></div>
+    <div class="stats-row">
+        <div class="stat-card"><div class="stat-num">500K+</div><div class="stat-label">Entscheidungen</div></div>
+        <div class="stat-card"><div class="stat-num">Live</div><div class="stat-label">RIS-Anbindung</div></div>
+        <div class="stat-card"><div class="stat-num">Opus</div><div class="stat-label">AI-Modell</div></div>
+        <div class="stat-card"><div class="stat-num">6</div><div class="stat-label">Rechtsgebiete</div></div>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
-
     with col1:
-        st.markdown('<div class="category-header">Strafrecht</div>', unsafe_allow_html=True)
-        for ex in [
-            "Was passiert bei Diebstahl in Österreich?",
-            "Verteidigungsmöglichkeiten bei Körperverletzung?",
-            "Was ist Diversion und wann bekommt man sie?",
-            "Wann ist eine Tat verjährt?",
-        ]:
+        st.markdown('<div class="cat-header">Strafrecht</div>', unsafe_allow_html=True)
+        for ex in ["Was passiert bei Diebstahl?", "Verteidigung bei Körperverletzung?", "Wann bekommt man Diversion?", "Wann ist eine Tat verjährt?"]:
             if st.button(ex, key=f"ex_{ex}", use_container_width=True):
                 st.session_state.pending_question = ex
                 st.rerun()
-
-        st.markdown('<div class="category-header">Zivilrecht & Mietrecht</div>', unsafe_allow_html=True)
-        for ex in [
-            "Welche Kündigungsfristen gelten im Mietrecht?",
-            "Wann verjähren Schadenersatzansprüche?",
-            "Was sind meine Rechte als Mieter bei Mängeln?",
-            "Wie funktioniert eine Klage auf Unterlassung?",
-        ]:
+        st.markdown('<div class="cat-header">Zivilrecht & Mietrecht</div>', unsafe_allow_html=True)
+        for ex in ["Kündigungsfristen im Mietrecht?", "Wann verjähren Schadenersatzansprüche?", "Rechte als Mieter bei Mängeln?", "Klage auf Unterlassung?"]:
             if st.button(ex, key=f"ex_{ex}", use_container_width=True):
                 st.session_state.pending_question = ex
                 st.rerun()
-
     with col2:
-        st.markdown('<div class="category-header">Arbeitsrecht</div>', unsafe_allow_html=True)
-        for ex in [
-            "Welche Kündigungsfristen gelten für Angestellte?",
-            "Wann ist eine Entlassung gerechtfertigt?",
-            "Wie funktioniert Abfertigung Neu?",
-            "Welche Ansprüche habe ich bei Dienstverhinderung?",
-        ]:
+        st.markdown('<div class="cat-header">Arbeitsrecht</div>', unsafe_allow_html=True)
+        for ex in ["Kündigungsfristen für Angestellte?", "Wann ist Entlassung gerechtfertigt?", "Wie funktioniert Abfertigung Neu?", "Ansprüche bei Dienstverhinderung?"]:
+            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state.pending_question = ex
+                st.rerun()
+        st.markdown('<div class="cat-header">Verwaltungsrecht</div>', unsafe_allow_html=True)
+        for ex in ["Beschwerde gegen Bescheid einlegen?", "Rechte bei Polizei-Vernehmung?", "Fristen im Verwaltungsverfahren?", "Wann ist ein Verwaltungsakt nichtig?"]:
             if st.button(ex, key=f"ex_{ex}", use_container_width=True):
                 st.session_state.pending_question = ex
                 st.rerun()
 
-        st.markdown('<div class="category-header">Verwaltungsrecht</div>', unsafe_allow_html=True)
-        for ex in [
-            "Wie lege ich Beschwerde gegen einen Bescheid ein?",
-            "Welche Rechte habe ich bei einer Polizei-Vernehmung?",
-            "Welche Fristen gelten im Verwaltungsverfahren?",
-            "Wann ist ein Verwaltungsakt nichtig?",
-        ]:
-            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
-                st.session_state.pending_question = ex
-                st.rerun()
-
-# --- Handle Schriftsatz Generation ---
+# --- Schriftsatz ---
 if st.session_state.get("generate_schriftsatz_from"):
     research_text = st.session_state.pop("generate_schriftsatz_from")
-
     user_msg = "Schriftsatz generieren basierend auf der letzten Rechtsrecherche"
     st.session_state.messages.append({"role": "user", "content": user_msg})
     with st.chat_message("user"):
         st.markdown(user_msg)
-
     with st.chat_message("assistant"):
         with st.spinner("Schriftsatz wird erstellt..."):
             try:
                 from generation.schriftsatz import generate_schriftsatz
-
                 schriftsatz = generate_schriftsatz(research_text)
                 st.markdown(schriftsatz)
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": schriftsatz,
-                })
+                st.session_state.messages.append({"role": "assistant", "content": schriftsatz})
             except Exception as e:
                 import traceback
-                error_msg = f"Fehler bei der Schriftsatz-Erstellung: {str(e)}"
-                st.error(error_msg)
+                st.error(f"Fehler: {e}")
                 st.code(traceback.format_exc())
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.session_state.messages.append({"role": "assistant", "content": f"Fehler: {e}"})
 
-# --- Handle Document Analysis ---
+# --- Document Analysis ---
 if st.session_state.get("analyze_document"):
     st.session_state.analyze_document = False
     file_data = st.session_state.pop("uploaded_file_data", None)
     file_name = st.session_state.pop("uploaded_file_name", "Dokument")
-
     if file_data:
         user_msg = f"Dokument-Analyse: {file_name}"
         st.session_state.messages.append({"role": "user", "content": user_msg})
         with st.chat_message("user"):
             st.markdown(user_msg)
-
         with st.chat_message("assistant"):
-            with st.spinner("Dokument wird analysiert — Gesetze & Rechtsprechung werden durchsucht..."):
+            with st.spinner("Dokument wird analysiert..."):
                 try:
-                    from generation.document_analyzer import (
-                        extract_text_from_upload,
-                        analyze_document,
-                    )
-
-                    class _UploadedFileProxy:
-                        def __init__(self, data: bytes, name: str):
+                    from generation.document_analyzer import extract_text_from_upload, analyze_document
+                    class _Proxy:
+                        def __init__(self, data, name):
                             self.name = name
                             self.size = len(data)
                             self._data = data
-                        def read(self):
-                            return self._data
-                        def getvalue(self):
-                            return self._data
-
-                    proxy = _UploadedFileProxy(file_data, file_name)
-                    doc_text = extract_text_from_upload(proxy)
-
+                        def read(self): return self._data
+                        def getvalue(self): return self._data
+                    doc_text = extract_text_from_upload(_Proxy(file_data, file_name))
                     if not doc_text.strip():
-                        raise ValueError("Keine Textinhalte im Dokument gefunden.")
-
-                    with st.expander("Extrahierter Text (Vorschau)"):
+                        raise ValueError("Keine Textinhalte gefunden.")
+                    with st.expander("Extrahierter Text"):
                         st.text(doc_text[:2000] + ("..." if len(doc_text) > 2000 else ""))
-
-                    response = analyze_document(
-                        document_text=doc_text,
-                        applikation=applikation or "Justiz",
-                        max_sources=n_results,
-                    )
-
+                    response = analyze_document(doc_text, applikation or "Justiz", n_results)
                     st.markdown(response.answer)
-
                     sources_data = []
                     if response.extracted_charges:
-                        st.info(f"Erkannte Suchbegriffe: {response.extracted_charges}")
-
+                        st.info(f"Suchbegriffe: {response.extracted_charges}")
                     if response.sources:
                         with st.expander(f"Rechtsprechung ({len(response.sources)})"):
                             for s in response.sources:
                                 gz = s.geschaeftszahl
-                                if s.source_url:
-                                    st.markdown(f"**{s.gericht} [{gz}]({s.source_url})** — {s.datum}")
-                                else:
-                                    st.markdown(f"**{s.gericht} {gz}** — {s.datum}")
-                                if s.normen:
-                                    st.caption(f"Normen: {', '.join(s.normen[:5])}")
-                                if s.text_preview:
-                                    st.caption(s.text_preview[:300] + "...")
+                                link = f"[{gz}]({s.source_url})" if s.source_url else gz
+                                st.markdown(f"**{s.gericht} {link}** — {s.datum}")
+                                if s.normen: st.caption(f"Normen: {', '.join(s.normen[:5])}")
+                                if s.text_preview: st.caption(s.text_preview[:300] + "...")
                                 st.divider()
-                                sources_data.append({
-                                    "geschaeftszahl": gz,
-                                    "gericht": s.gericht,
-                                    "datum": s.datum,
-                                    "url": s.source_url,
-                                    "text_preview": s.text_preview[:300] if s.text_preview else "",
-                                })
-
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response.answer,
-                        "sources": sources_data,
-                    })
-
+                                sources_data.append({"geschaeftszahl": gz, "gericht": s.gericht, "datum": s.datum, "url": s.source_url, "text_preview": s.text_preview[:300] if s.text_preview else ""})
+                    st.session_state.messages.append({"role": "assistant", "content": response.answer, "sources": sources_data})
                 except Exception as e:
                     import traceback
-                    error_msg = f"Fehler bei der Dokument-Analyse: {str(e)}"
-                    st.error(error_msg)
+                    st.error(f"Fehler: {e}")
                     st.code(traceback.format_exc())
-                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                    st.session_state.messages.append({"role": "assistant", "content": f"Fehler: {e}"})
 
-# Handle pending question from example buttons
+# --- Chat Input ---
 pending = st.session_state.pop("pending_question", None)
 prompt = pending or st.chat_input("Rechtsfrage eingeben...")
 
@@ -534,82 +624,36 @@ if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-
     with st.chat_message("assistant"):
-        with st.spinner("Durchsuche RIS-Datenbank — Gesetze & Rechtsprechung..."):
+        with st.spinner("Durchsuche RIS-Datenbank..."):
             try:
                 from generation.live_search import live_search_with_history
-
-                history = []
-                for msg in st.session_state.messages[:-1]:
-                    history.append({
-                        "role": msg["role"],
-                        "content": msg["content"],
-                    })
-
-                response = live_search_with_history(
-                    question=prompt,
-                    history=history,
-                    applikation=applikation or "Justiz",
-                    norm=norm or "",
-                    max_sources=n_results,
-                )
-
+                history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[:-1]]
+                response = live_search_with_history(prompt, history, applikation or "Justiz", norm or "", n_results)
                 st.markdown(response.answer)
-
-                sources_data = []
-                gesetz_data = []
-
+                sources_data, gesetz_data = [], []
                 if response.gesetz_sources:
                     with st.expander(f"Gesetze ({len(response.gesetz_sources)})", expanded=True):
                         for g in response.gesetz_sources:
                             label = f"{g.kurztitel} {g.paragraph}"
-                            if g.source_url:
-                                st.markdown(f"**[{label}]({g.source_url})**")
-                            else:
-                                st.markdown(f"**{label}**")
-                            if g.kundmachungsorgan:
-                                st.caption(g.kundmachungsorgan)
+                            st.markdown(f"**[{label}]({g.source_url})**" if g.source_url else f"**{label}**")
+                            if g.kundmachungsorgan: st.caption(g.kundmachungsorgan)
                             st.divider()
-                            gesetz_data.append({
-                                "kurztitel": g.kurztitel,
-                                "paragraph": g.paragraph,
-                                "url": g.source_url,
-                            })
-
+                            gesetz_data.append({"kurztitel": g.kurztitel, "paragraph": g.paragraph, "url": g.source_url})
                 if response.sources:
                     with st.expander(f"Rechtsprechung ({len(response.sources)})", expanded=True):
-                        if response.query_used:
-                            st.caption(f"Suchbegriffe: {response.query_used}")
+                        if response.query_used: st.caption(f"Suchbegriffe: {response.query_used}")
                         for s in response.sources:
                             gz = s.geschaeftszahl
-                            if s.source_url:
-                                st.markdown(f"**{s.gericht} [{gz}]({s.source_url})** — {s.datum}")
-                            else:
-                                st.markdown(f"**{s.gericht} {gz}** — {s.datum}")
-                            if s.normen:
-                                st.caption(f"Normen: {', '.join(s.normen[:5])}")
-                            if s.text_preview:
-                                st.caption(s.text_preview[:300] + "...")
+                            link = f"[{gz}]({s.source_url})" if s.source_url else gz
+                            st.markdown(f"**{s.gericht} {link}** — {s.datum}")
+                            if s.normen: st.caption(f"Normen: {', '.join(s.normen[:5])}")
+                            if s.text_preview: st.caption(s.text_preview[:300] + "...")
                             st.divider()
-                            sources_data.append({
-                                "geschaeftszahl": gz,
-                                "gericht": s.gericht,
-                                "datum": s.datum,
-                                "url": s.source_url,
-                                "text_preview": s.text_preview[:300] if s.text_preview else "",
-                            })
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response.answer,
-                    "sources": sources_data,
-                    "gesetz_sources": gesetz_data,
-                })
-
+                            sources_data.append({"geschaeftszahl": gz, "gericht": s.gericht, "datum": s.datum, "url": s.source_url, "text_preview": s.text_preview[:300] if s.text_preview else ""})
+                st.session_state.messages.append({"role": "assistant", "content": response.answer, "sources": sources_data, "gesetz_sources": gesetz_data})
             except Exception as e:
                 import traceback
-                error_msg = f"Fehler: {str(e)}"
-                st.error(error_msg)
+                st.error(f"Fehler: {e}")
                 st.code(traceback.format_exc())
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.session_state.messages.append({"role": "assistant", "content": f"Fehler: {e}"})
