@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+import hashlib
 import logging
 from pathlib import Path
 from typing import Iterator, Optional
@@ -19,6 +20,32 @@ from config import RIS_API_BASE, RIS_REQUEST_DELAY, RAW_DIR
 logger = logging.getLogger(__name__)
 
 PAGE_SIZES = {"Ten": 10, "Twenty": 20, "Fifty": 50, "OneHundred": 100}
+
+# In-process cache for RIS API responses (TTL 1 hour)
+_API_CACHE: dict = {}
+_CACHE_TTL_SECONDS = 3600
+
+
+def _cache_key(method: str, params: dict) -> str:
+    """Build a deterministic cache key from method + params."""
+    payload = json.dumps({"m": method, "p": params}, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _cache_get(key: str):
+    """Return cached value if fresh, else None."""
+    entry = _API_CACHE.get(key)
+    if entry is None:
+        return None
+    ts, val = entry
+    if time.time() - ts > _CACHE_TTL_SECONDS:
+        _API_CACHE.pop(key, None)
+        return None
+    return val
+
+
+def _cache_set(key: str, value):
+    _API_CACHE[key] = (time.time(), value)
 
 
 class RISClient:
@@ -76,9 +103,17 @@ class RISClient:
 
         logger.info(f"RIS API request: app={applikation}, page={seite}, search='{suchworte}'")
 
+        cache_key = _cache_key("search_judikatur", params)
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            logger.info(f"  [cache hit] {applikation} p{seite} '{suchworte}'")
+            return cached
+
         resp = self.session.get(self.base_url, params=params, timeout=30)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        _cache_set(cache_key, data)
+        return data
 
     def iter_decisions(
         self,
@@ -201,14 +236,23 @@ class RISClient:
         self,
         suchworte: str = "",
         norm: str = "",
+        titel: str = "",
+        paragraph: str = "",
+        gesetzesnummer: str = "",
+        fassung_vom: str = "",
         seite: int = 1,
         pro_seite: str = "Twenty",
     ) -> dict:
         """Search the Bundesrecht (consolidated federal law) endpoint.
 
         Args:
-            suchworte: Full-text search terms
+            suchworte: Full-text search terms (searches within law text)
             norm: Norm filter
+            titel: Title filter (e.g. "Strafgesetzbuch") — MUCH more precise
+            paragraph: Paragraph filter (API is unreliable, filter client-side)
+            gesetzesnummer: Direct law number (e.g. "10002296" for StGB)
+            fassung_vom: Return only the version valid on this date (YYYY-MM-DD).
+                Use today's date to get currently valid law.
             seite: Page number (1-based)
             pro_seite: Page size (Ten, Twenty, Fifty, OneHundred)
         """
@@ -221,13 +265,29 @@ class RISClient:
             params["Suchworte"] = suchworte
         if norm:
             params["Norm"] = norm
+        if titel:
+            params["Titel"] = titel
+        if paragraph:
+            params["Paragraph"] = paragraph
+        if gesetzesnummer:
+            params["Gesetzesnummer"] = gesetzesnummer
+        if fassung_vom:
+            params["FassungVom"] = fassung_vom
 
         url = f"{RIS_API_BASE}/Bundesrecht"
-        logger.info(f"RIS Bundesrecht request: page={seite}, search='{suchworte}'")
+        logger.info(f"RIS Bundesrecht request: page={seite}, titel='{titel}', search='{suchworte}', paragraph='{paragraph}'")
+
+        cache_key = _cache_key("search_bundesrecht", params)
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            logger.info(f"  [cache hit] Bundesrecht titel='{titel}' search='{suchworte}'")
+            return cached
 
         resp = self.session.get(url, params=params, timeout=30)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        _cache_set(cache_key, data)
+        return data
 
     def fetch_gesetz_text(self, doc_ref: dict) -> Optional[str]:
         """Fetch the HTML full text of a Bundesrecht document.

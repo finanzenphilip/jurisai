@@ -107,6 +107,28 @@ class LiveSource:
     text_preview: str
     source_url: str
     full_text: str
+    dokumenttyp: str = ""  # "Rechtssatz" | "Entscheidungstext" | "Beschluss"
+    rechtsgebiet: str = ""
+
+    @property
+    def is_rechtssatz(self) -> bool:
+        return self.dokumenttyp == "Rechtssatz"
+
+    def formatted_citation(self) -> str:
+        """Formal citation: 'OGH 15.03.2023, 7Ob40/22s'."""
+        try:
+            # Convert YYYY-MM-DD to DD.MM.YYYY
+            y, m, d = self.datum.split("-")
+            datum = f"{d}.{m}.{y}"
+        except Exception:
+            datum = self.datum
+        parts = [self.gericht]
+        if datum:
+            parts.append(datum)
+        citation = " ".join(filter(None, parts))
+        if self.geschaeftszahl:
+            citation += f", {self.geschaeftszahl}"
+        return citation.strip(", ")
 
 
 @dataclass
@@ -128,40 +150,119 @@ class LiveResponse:
     sources: list
     gesetz_sources: list = field(default_factory=list)
     query_used: str = ""
+    cited_gz: set = field(default_factory=set)
+    hallucinated_gz: set = field(default_factory=set)
+
+
+def extract_cited_geschaeftszahlen(text: str) -> set[str]:
+    """Extract case numbers (Geschäftszahlen) from Claude's response."""
+    patterns = [
+        r'\d+\s?Ob[A-Za-z]?\s?\d+/\d+[a-z]?',
+        r'\d+\s?Os\s?\d+/\d+[a-z]?',
+        r'\d+\s?Ra\s?\d+/\d+[a-z]?',
+        r'\d+\s?Nc\s?\d+/\d+[a-z]?',
+        r'\d+\s?Pres\s?\d+/\d+[a-z]?',
+        r'Ro\s?\d{4}/\d+/\d+',
+        r'Ra\s?\d{4}/\d+/\d+',
+        r'\d+Ob[A-Za-z]\d+/\d+[a-z]?',
+    ]
+    found: set[str] = set()
+    for pat in patterns:
+        for m in re.findall(pat, text):
+            normalized = re.sub(r'\s+', '', m.strip())
+            found.add(normalized)
+    return found
+
+
+def verify_citations(answer: str, sources: list[LiveSource]) -> tuple[set[str], set[str]]:
+    """Check which cited GZs in Claude's answer actually exist in the sources.
+
+    Returns (cited_gz, hallucinated_gz).
+    """
+    cited = extract_cited_geschaeftszahlen(answer)
+    # Available GZs from sources (Rechtssätze have multiple — include all)
+    available: set[str] = set()
+    for s in sources:
+        for part in re.split(r'[;,\s]+', s.geschaeftszahl):
+            part = part.strip()
+            if part:
+                available.add(re.sub(r'\s+', '', part))
+    hallucinated = {gz for gz in cited if gz not in available}
+    return cited, hallucinated
 
 
 def _build_combined_context(
     judikatur_sources: list[LiveSource],
     gesetz_sources: list[GesetzSource],
 ) -> str:
-    """Build a combined context string with labelled sections for Gesetze and Gerichtsentscheidungen."""
+    """Build a combined context string.
+
+    Structure:
+      1. GESETZE (aktuelle Fassung) — the law itself
+      2. RECHTSSÄTZE — distilled legal principles (lawyer gold)
+      3. ENTSCHEIDUNGEN — specific court decisions
+
+    Dates are formatted prominently for recency awareness.
+    """
     parts = []
 
-    # Gesetze (Bundesrecht) first — the law itself
+    # 1) Gesetze (Bundesrecht) — aktuelle Fassung
     if gesetz_sources:
         gesetz_parts = []
         for i, g in enumerate(gesetz_sources, 1):
-            header = f"[Gesetz {i}] {g.kurztitel} {g.paragraph}"
+            header = f"[GESETZ {i}] {g.kurztitel} {g.paragraph} — AKTUELLE FASSUNG"
             if g.kundmachungsorgan:
                 header += f" ({g.kundmachungsorgan})"
             if g.source_url:
                 header += f"\nLink: {g.source_url}"
             gesetz_parts.append(f"{header}\n{g.full_text}")
-        parts.append("GESETZE:\n\n" + "\n\n---\n\n".join(gesetz_parts))
+        parts.append("═══ GELTENDE GESETZE ═══\n\n" + "\n\n---\n\n".join(gesetz_parts))
 
-    # Gerichtsentscheidungen (Judikatur) second
-    if judikatur_sources:
-        jud_parts = []
-        for i, s in enumerate(judikatur_sources, 1):
-            header = f"[Quelle {i}] {s.gericht} {s.geschaeftszahl} ({s.datum})"
+    # Separate Rechtssätze (legal principles) from Entscheidungen (specific decisions)
+    rechtssaetze = [s for s in judikatur_sources if s.is_rechtssatz]
+    entscheidungen = [s for s in judikatur_sources if not s.is_rechtssatz]
+
+    # 2) Rechtssätze — distilled principles, most valuable for answering legal questions
+    if rechtssaetze:
+        rs_parts = []
+        for i, s in enumerate(rechtssaetze, 1):
+            date_formatted = _format_date(s.datum)
+            header = f"[RECHTSSATZ {i}] {s.gericht} {s.geschaeftszahl} vom {date_formatted}"
+            if s.rechtsgebiet:
+                header += f" | {s.rechtsgebiet}"
             if s.normen:
-                header += f" | Normen: {', '.join(s.normen[:5])}"
+                header += f"\n  Normen: {', '.join(s.normen[:5])}"
             if s.source_url:
-                header += f"\nLink: {s.source_url}"
-            jud_parts.append(f"{header}\n{s.full_text}")
-        parts.append("GERICHTSENTSCHEIDUNGEN:\n\n" + "\n\n---\n\n".join(jud_parts))
+                header += f"\n  Link: {s.source_url}"
+            rs_parts.append(f"{header}\n{s.full_text}")
+        parts.append("═══ RECHTSSÄTZE (Rechtsprinzipien) ═══\n\n" + "\n\n---\n\n".join(rs_parts))
 
-    return "\n\n===\n\n".join(parts)
+    # 3) Entscheidungen — specific court decisions
+    if entscheidungen:
+        ent_parts = []
+        for i, s in enumerate(entscheidungen, 1):
+            date_formatted = _format_date(s.datum)
+            typ = f" [{s.dokumenttyp}]" if s.dokumenttyp and s.dokumenttyp != "Entscheidungstext" else ""
+            header = f"[ENTSCHEIDUNG {i}]{typ} {s.gericht} {s.geschaeftszahl} vom {date_formatted}"
+            if s.rechtsgebiet:
+                header += f" | {s.rechtsgebiet}"
+            if s.normen:
+                header += f"\n  Normen: {', '.join(s.normen[:5])}"
+            if s.source_url:
+                header += f"\n  Link: {s.source_url}"
+            ent_parts.append(f"{header}\n{s.full_text}")
+        parts.append("═══ EINZELENTSCHEIDUNGEN ═══\n\n" + "\n\n---\n\n".join(ent_parts))
+
+    return "\n\n".join(parts)
+
+
+def _format_date(iso_date: str) -> str:
+    """YYYY-MM-DD -> DD.MM.YYYY (Austrian format)."""
+    try:
+        y, m, d = iso_date.split("-")
+        return f"{d}.{m}.{y}"
+    except Exception:
+        return iso_date or "Datum unbekannt"
 
 
 def live_search_and_answer(
@@ -187,10 +288,11 @@ def live_search_and_answer(
         max_sources=max_sources,
     )
 
-    # 2) Search Bundesrecht (federal law texts)
+    # 2) Search Bundesrecht using norms cited in Judikatur results
     gesetz_sources = _search_bundesrecht_sources(
         search_terms=search_terms,
-        max_sources=3,
+        max_sources=5,
+        judikatur_sources=sources,
     )
 
     has_any = bool(sources) or bool(gesetz_sources)
@@ -225,72 +327,219 @@ Erkläre die relevanten Gesetze und Paragraphen allgemein verständlich.""",
     )
 
 
+# Law abbreviation → full title mapping for Bundesrecht search.
+# Titel filter requires the full (or partial exact) name.
+LAW_TITLES = {
+    "StGB": "Strafgesetzbuch",
+    "StPO": "Strafprozeßordnung",
+    "ABGB": "Allgemeines bürgerliches Gesetzbuch",
+    "ZPO": "Zivilprozessordnung",
+    "EO": "Exekutionsordnung",
+    "UGB": "Unternehmensgesetzbuch",
+    "GmbHG": "GmbH-Gesetz",
+    "AktG": "Aktiengesetz",
+    "VStG": "Verwaltungsstrafgesetz",
+    "AVG": "Allgemeines Verwaltungsverfahrensgesetz",
+    "BVergG": "Bundesvergabegesetz",
+    "MRG": "Mietrechtsgesetz",
+    "WEG": "Wohnungseigentumsgesetz",
+    "ASVG": "Allgemeines Sozialversicherungsgesetz",
+    "KSchG": "Konsumentenschutzgesetz",
+    "GewO": "Gewerbeordnung",
+    "DSG": "Datenschutzgesetz",
+    "EStG": "Einkommensteuergesetz",
+    "BAO": "Bundesabgabenordnung",
+    "FinStrG": "Finanzstrafgesetz",
+    "IO": "Insolvenzordnung",
+    "AußStrG": "Außerstreitgesetz",
+    "SMG": "Suchtmittelgesetz",
+    "UStG": "Umsatzsteuergesetz",
+    "KStG": "Körperschaftsteuergesetz",
+    "BWG": "Bankwesengesetz",
+    "WAG": "Wertpapieraufsichtsgesetz",
+    "StVO": "Straßenverkehrsordnung",
+    "FSG": "Führerscheingesetz",
+    "KFG": "Kraftfahrgesetz",
+    "EheG": "Ehegesetz",
+    "ArbVG": "Arbeitsverfassungsgesetz",
+    "AngG": "Angestelltengesetz",
+    "AZG": "Arbeitszeitgesetz",
+    "UrlG": "Urlaubsgesetz",
+    "MedienG": "Mediengesetz",
+    "B-VG": "Bundes-Verfassungsgesetz",
+    "GlBG": "Gleichbehandlungsgesetz",
+    "PHG": "Produkthaftungsgesetz",
+    "VKrG": "Verbraucherkreditgesetz",
+    "FAGG": "Fern- und Auswärtsgeschäfte-Gesetz",
+    "AuslBG": "Ausländerbeschäftigungsgesetz",
+}
+
+
+def _parse_norm_reference(norm: str) -> tuple[str, str]:
+    """Parse a norm reference like 'StGB §83' or 'ABGB §1325' into (law, paragraph).
+
+    Handles formats:
+      - "StGB §83"         → ("StGB", "83")
+      - "StGB §83 Abs1"    → ("StGB", "83")
+      - "StGB §  83 Abs 1" → ("StGB", "83")
+      - "§ 127 StGB"       → ("StGB", "127")
+    """
+    # Try: <Law> §<num>
+    m = re.search(r'\b([A-Z][A-Za-zÄÖÜäöüß-]+)\s*§\s*(\d+\s*[a-z]?)', norm)
+    if m:
+        law = m.group(1).strip()
+        para = m.group(2).replace(" ", "").strip()
+        return law, para
+
+    # Try: §<num> <Law>
+    m = re.search(r'§\s*(\d+\s*[a-z]?)\s+([A-Z][A-Za-zÄÖÜäöüß-]+)', norm)
+    if m:
+        law = m.group(2).strip()
+        para = m.group(1).replace(" ", "").strip()
+        return law, para
+
+    return "", ""
+
+
+def _extract_top_norms(judikatur_sources: list[LiveSource], max_norms: int = 5) -> list[tuple[str, str]]:
+    """From judikatur results, extract the most-cited (law, paragraph) tuples."""
+    from collections import Counter
+    counter: Counter = Counter()
+    for s in judikatur_sources:
+        for norm in s.normen:
+            law, para = _parse_norm_reference(norm)
+            if law and para and law in LAW_TITLES:
+                counter[(law, para)] += 1
+    return [item for item, _ in counter.most_common(max_norms)]
+
+
+def _fetch_bundesrecht_by_norm(
+    ris: RISClient,
+    law: str,
+    paragraph: str,
+    topic_keyword: str = "",
+) -> list:
+    """Fetch current-fassung paragraphs for a specific law + paragraph.
+
+    Uses Titel + FassungVom=today for precise, up-to-date results.
+    """
+    title = LAW_TITLES.get(law, law)
+    today = datetime.now().strftime("%Y-%m-%d")
+    results = []
+
+    # Strategy: Titel + Suchworte (keyword) + FassungVom + filter client-side by paragraph
+    try:
+        raw = ris.search_bundesrecht(
+            titel=title,
+            suchworte=topic_keyword or paragraph,
+            fassung_vom=today,
+            pro_seite="Fifty",
+        )
+        docs = raw.get("OgdSearchResult", {}).get("OgdDocumentResults", {}).get("OgdDocumentReference", [])
+        if isinstance(docs, dict):
+            docs = [docs]
+
+        wanted = f"§ {paragraph}".strip()
+        seen_paras = set()
+        for doc in docs:
+            meta = ris.extract_bundesrecht_meta(doc)
+            if not meta.get("kurztitel"):
+                continue
+
+            para_str = meta.get("paragraph", "").strip()
+            # Match "§ 83" or "§ 83a" etc, but not "§ 830"
+            if para_str == wanted or para_str.rstrip("abcdefghij") == wanted:
+                key = (meta["kurztitel"], para_str)
+                if key in seen_paras:
+                    continue
+                seen_paras.add(key)
+                results.append((meta, doc))
+    except Exception as e:
+        logger.warning(f"Bundesrecht norm search failed ({law} §{paragraph}): {e}")
+
+    return results
+
+
 def _search_bundesrecht_sources(
     search_terms: str,
-    max_sources: int = 3,
+    max_sources: int = 5,
+    judikatur_sources: list[LiveSource] = None,
 ) -> list[GesetzSource]:
-    """Search RIS Bundesrecht and return GesetzSource list.
+    """Search RIS Bundesrecht using NORMS cited in Judikatur results.
 
-    Tries the full search terms first, then falls back to fewer terms.
+    Strategy:
+      1. If judikatur_sources provided: extract top cited norms, fetch those specific paragraphs
+      2. Fallback: Title-based search for common law abbreviations in query
+      3. Only use current valid versions (FassungVom=today)
     """
     ris = RISClient(delay=0.3)
     sources: list[GesetzSource] = []
+    seen = set()
 
-    attempts = [
-        search_terms,
-        " ".join(sorted(search_terms.split(), key=len, reverse=True)[:3]),
-        sorted(search_terms.split(), key=len, reverse=True)[0] if search_terms.split() else "",
-    ]
+    # STRATEGY 1: Use norms cited in Judikatur results (most relevant)
+    if judikatur_sources:
+        top_norms = _extract_top_norms(judikatur_sources, max_norms=max_sources)
+        logger.info(f"Top cited norms: {top_norms}")
 
-    for attempt in attempts:
-        if not attempt.strip():
-            continue
-        try:
-            result = ris.search_bundesrecht(suchworte=attempt, pro_seite="Twenty")
-            ogd_result = result.get("OgdSearchResult", {})
-            doc_refs = ogd_result.get("OgdDocumentResults", {}).get("OgdDocumentReference", [])
+        # Also extract a topic keyword from search_terms for better relevance
+        topic_words = [w for w in search_terms.split() if len(w) > 4 and not re.match(r'^§|^\d+|^[A-Z]{3,}$', w)]
+        topic = topic_words[0] if topic_words else ""
 
-            if not doc_refs:
+        for law, para in top_norms:
+            if len(sources) >= max_sources:
+                break
+            key = (law, para)
+            if key in seen:
                 continue
+            seen.add(key)
 
-            if isinstance(doc_refs, dict):
-                doc_refs = [doc_refs]
-
-            count = 0
-            for doc_ref in doc_refs:
-                if count >= max_sources:
-                    break
-
-                meta = ris.extract_bundesrecht_meta(doc_ref)
-                kurztitel = meta.get("kurztitel", "")
-                paragraph = meta.get("paragraph", "")
-                if not kurztitel:
-                    continue
-
-                # Fetch the actual law text
-                gesetz_text = ris.fetch_gesetz_text(doc_ref)
+            matches = _fetch_bundesrecht_by_norm(ris, law, para, topic_keyword=topic)
+            for meta, doc in matches[:1]:  # take first (most recent/relevant) per norm
+                gesetz_text = ris.fetch_gesetz_text(doc)
                 if not gesetz_text:
-                    gesetz_text = f"{kurztitel} {paragraph}"
-
-                text_for_context = gesetz_text[:4000]
+                    gesetz_text = f"{meta['kurztitel']} {meta['paragraph']}"
 
                 sources.append(GesetzSource(
-                    kurztitel=kurztitel,
-                    paragraph=paragraph,
+                    kurztitel=meta["kurztitel"],
+                    paragraph=meta["paragraph"],
                     gesetzesnummer=meta.get("gesetzesnummer", ""),
                     inkrafttretensdatum=meta.get("inkrafttretensdatum", ""),
                     kundmachungsorgan=meta.get("kundmachungsorgan", ""),
                     source_url=meta.get("source_url", ""),
-                    full_text=text_for_context,
+                    full_text=gesetz_text[:4000],
                 ))
-                count += 1
-                logger.info(f"  Fetched Gesetz: {kurztitel} {paragraph}")
-
-            if sources:
+                logger.info(f"  Fetched Gesetz: {meta['kurztitel']} {meta['paragraph']}")
                 break
-        except Exception as e:
-            logger.warning(f"Bundesrecht search '{attempt}' failed: {e}")
-            continue
+
+    # STRATEGY 2: Fallback — parse question for direct norm references
+    if len(sources) < max_sources:
+        direct_norms = re.findall(r'([A-Z][A-Za-zÄÖÜäöüß-]+)\s*§\s*(\d+\s*[a-z]?)', search_terms)
+        for law, para in direct_norms:
+            if len(sources) >= max_sources:
+                break
+            law = law.strip()
+            para = para.replace(" ", "").strip()
+            if law not in LAW_TITLES:
+                continue
+            key = (law, para)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            matches = _fetch_bundesrecht_by_norm(ris, law, para)
+            for meta, doc in matches[:1]:
+                gesetz_text = ris.fetch_gesetz_text(doc) or f"{meta['kurztitel']} {meta['paragraph']}"
+                sources.append(GesetzSource(
+                    kurztitel=meta["kurztitel"],
+                    paragraph=meta["paragraph"],
+                    gesetzesnummer=meta.get("gesetzesnummer", ""),
+                    inkrafttretensdatum=meta.get("inkrafttretensdatum", ""),
+                    kundmachungsorgan=meta.get("kundmachungsorgan", ""),
+                    source_url=meta.get("source_url", ""),
+                    full_text=gesetz_text[:4000],
+                ))
+                logger.info(f"  Fetched direct-norm Gesetz: {meta['kurztitel']} {meta['paragraph']}")
+                break
 
     return sources
 
@@ -344,8 +593,10 @@ def _fetch_sources_for_query(
                 text_preview=full_text[:500] if full_text else "",
                 source_url=meta.get("source_url", ""),
                 full_text=text_for_context,
+                dokumenttyp=meta.get("dokumenttyp", ""),
+                rechtsgebiet=meta.get("rechtsgebiet", ""),
             ))
-            logger.info(f"  Fetched: {gz} ({meta.get('entscheidungsdatum', '?')})")
+            logger.info(f"  Fetched: {gz} [{meta.get('dokumenttyp','?')}] ({meta.get('entscheidungsdatum', '?')})")
     except Exception as e:
         logger.warning(f"Search '{search_term}' [{datum_von}..{datum_bis}] failed: {e}")
 
@@ -473,12 +724,13 @@ def live_search_with_history(
         prefer_recent=prefer_recent,
     )
 
-    # Step 3: Search Bundesrecht
+    # Step 3: Search Bundesrecht using norms from Judikatur
     if progress_callback:
-        progress_callback("Durchsuche Bundesgesetze...")
+        progress_callback("Hole aktuelle Gesetzestexte...")
     gesetz_sources = _search_bundesrecht_sources(
         search_terms=ai_terms,
-        max_sources=3,
+        max_sources=5,
+        judikatur_sources=sources,
     )
 
     has_any = bool(sources) or bool(gesetz_sources)
@@ -541,10 +793,11 @@ def stream_search_with_history(
     )
 
     if progress_callback:
-        progress_callback("Durchsuche Bundesgesetze...")
+        progress_callback("Hole aktuelle Gesetzestexte...")
     gesetz_sources = _search_bundesrecht_sources(
         search_terms=ai_terms,
-        max_sources=3,
+        max_sources=5,
+        judikatur_sources=sources,
     )
 
     has_any = bool(sources) or bool(gesetz_sources)
