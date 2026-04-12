@@ -10,6 +10,7 @@ import re
 import sys
 import logging
 from pathlib import Path
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -294,76 +295,144 @@ def _search_bundesrecht_sources(
     return sources
 
 
+def _fetch_sources_for_query(
+    ris: RISClient,
+    search_term: str,
+    applikation: str,
+    norm: str,
+    max_sources: int,
+    datum_von: str = "",
+    datum_bis: str = "",
+    seen_gz: set = None,
+) -> list[LiveSource]:
+    """Fetch LiveSource objects for a single search query + date range."""
+    if seen_gz is None:
+        seen_gz = set()
+
+    results: list[LiveSource] = []
+    try:
+        for doc_ref in ris.iter_decisions(
+            applikation=applikation,
+            suchworte=search_term,
+            norm=norm,
+            datum_von=datum_von,
+            datum_bis=datum_bis,
+            max_pages=2,
+        ):
+            if len(results) >= max_sources:
+                break
+
+            meta = extract_metadata(doc_ref)
+            gz = meta.get("geschaeftszahl", "")
+            if not gz or gz in seen_gz:
+                continue
+            seen_gz.add(gz)
+
+            full_html = ris.fetch_full_text(doc_ref, fmt="Html")
+            full_text = ""
+            if full_html:
+                sections = parse_html_decision(full_html)
+                full_text = sections.get("begruendung") or sections.get("full_text", "")
+
+            text_for_context = full_text[:5000] if full_text else f"Entscheidung {gz}"
+
+            results.append(LiveSource(
+                geschaeftszahl=gz,
+                gericht=meta.get("gericht", ""),
+                datum=meta.get("entscheidungsdatum", ""),
+                normen=meta.get("normen", []),
+                text_preview=full_text[:500] if full_text else "",
+                source_url=meta.get("source_url", ""),
+                full_text=text_for_context,
+            ))
+            logger.info(f"  Fetched: {gz} ({meta.get('entscheidungsdatum', '?')})")
+    except Exception as e:
+        logger.warning(f"Search '{search_term}' [{datum_von}..{datum_bis}] failed: {e}")
+
+    return results
+
+
+def _sort_sources_by_date(sources: list[LiveSource]) -> list[LiveSource]:
+    """Sort sources by date DESC (newest first). Empty dates go last."""
+    def date_key(s: LiveSource):
+        try:
+            return datetime.strptime(s.datum, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return datetime(1900, 1, 1)
+    return sorted(sources, key=date_key, reverse=True)
+
+
 def _search_ris_sources(
     question: str,
     applikation: str = "Justiz",
     norm: str = "",
     max_sources: int = 5,
     ai_search_terms: str = "",
+    prefer_recent: bool = True,
 ) -> tuple[list[LiveSource], str]:
-    """Search RIS and return sources + the query that worked.
+    """Search RIS with multi-wave recency strategy.
 
-    Uses AI-rewritten search terms when provided, falls back to rule-based extraction.
+    Wave 1: Last 2 years (most current jurisprudence)
+    Wave 2: Last 5 years (if wave 1 insufficient)
+    Wave 3: All time (fallback, if still insufficient)
+
+    Within each wave, results are sorted newest-first.
     """
     ris = RISClient(delay=0.3)
     search_terms = ai_search_terms or extract_search_terms(question)
-    logger.info(f"Live search: '{search_terms}' (app={applikation})")
+    logger.info(f"Live search: '{search_terms}' (app={applikation}, prefer_recent={prefer_recent})")
 
-    sources: list[LiveSource] = []
-    attempts = [
+    fallback_terms = [
         search_terms,
         " ".join(sorted(search_terms.split(), key=len, reverse=True)[:3]),
         sorted(search_terms.split(), key=len, reverse=True)[0] if search_terms.split() else "",
     ]
 
+    sources: list[LiveSource] = []
     used_search = search_terms
-    for attempt in attempts:
-        if not attempt.strip():
-            continue
-        try:
-            count = 0
-            for doc_ref in ris.iter_decisions(
+    seen_gz: set[str] = set()
+
+    if prefer_recent:
+        today = datetime.now()
+        waves = [
+            (today - timedelta(days=365 * 2)).strftime("%Y-%m-%d"),  # last 2 years
+            (today - timedelta(days=365 * 5)).strftime("%Y-%m-%d"),  # last 5 years
+            "",  # all time
+        ]
+    else:
+        waves = [""]
+
+    for wave_idx, datum_von in enumerate(waves):
+        if len(sources) >= max_sources:
+            break
+
+        wave_label = {0: "letzte 2J", 1: "letzte 5J", 2: "alle"}.get(wave_idx, f"wave {wave_idx}")
+        logger.info(f"Wave {wave_idx+1} ({wave_label}): searching...")
+
+        for term in fallback_terms:
+            if not term.strip() or len(sources) >= max_sources:
+                continue
+
+            wave_sources = _fetch_sources_for_query(
+                ris=ris,
+                search_term=term,
                 applikation=applikation,
-                suchworte=attempt,
                 norm=norm,
-                max_pages=2,
-            ):
-                if count >= max_sources:
-                    break
+                max_sources=max_sources - len(sources),
+                datum_von=datum_von,
+                seen_gz=seen_gz,
+            )
 
-                meta = extract_metadata(doc_ref)
-                gz = meta.get("geschaeftszahl", "")
-                if not gz:
-                    continue
+            if wave_sources:
+                sources.extend(wave_sources)
+                used_search = term
+                logger.info(f"  Wave {wave_idx+1} got {len(wave_sources)} results with '{term}'")
+                break  # try next wave only if still under max_sources
 
-                full_html = ris.fetch_full_text(doc_ref, fmt="Html")
-                full_text = ""
-                if full_html:
-                    sections = parse_html_decision(full_html)
-                    full_text = sections.get("begruendung") or sections.get("full_text", "")
+    # Final sort: newest first
+    sources = _sort_sources_by_date(sources)
 
-                text_for_context = full_text[:5000] if full_text else f"Entscheidung {gz}"
-
-                sources.append(LiveSource(
-                    geschaeftszahl=gz,
-                    gericht=meta.get("gericht", ""),
-                    datum=meta.get("entscheidungsdatum", ""),
-                    normen=meta.get("normen", []),
-                    text_preview=full_text[:500] if full_text else "",
-                    source_url=meta.get("source_url", ""),
-                    full_text=text_for_context,
-                ))
-                count += 1
-                logger.info(f"  Fetched: {gz}")
-
-            if sources:
-                used_search = attempt
-                break
-        except Exception as e:
-            logger.warning(f"Search attempt '{attempt}' failed: {e}")
-            continue
-
-    return sources, used_search
+    return sources[:max_sources], used_search
 
 
 def _build_ris_context(sources: list[LiveSource]) -> str:
@@ -386,26 +455,22 @@ def live_search_with_history(
     norm: str = "",
     max_sources: int = 5,
     progress_callback=None,
+    prefer_recent: bool = True,
 ) -> LiveResponse:
-    """Search RIS live (Judikatur + Bundesrecht) and answer with conversation history.
-
-    Args:
-        progress_callback: Optional callable(step: str) to report progress steps.
-    """
-    # Step 1: AI-powered query rewriting
+    """Search RIS live (Judikatur + Bundesrecht) and answer with conversation history."""
     if progress_callback:
         progress_callback("Analysiere Rechtsfrage...")
     ai_terms = rewrite_query_with_ai(question)
 
-    # Step 2: Search Judikatur
     if progress_callback:
-        progress_callback("Durchsuche Rechtsprechung...")
+        progress_callback("Durchsuche aktuelle Rechtsprechung..." if prefer_recent else "Durchsuche Rechtsprechung...")
     sources, used_search = _search_ris_sources(
         question=question,
         applikation=applikation,
         norm=norm,
         max_sources=max_sources,
         ai_search_terms=ai_terms,
+        prefer_recent=prefer_recent,
     )
 
     # Step 3: Search Bundesrecht
@@ -453,6 +518,7 @@ def stream_search_with_history(
     norm: str = "",
     max_sources: int = 5,
     progress_callback=None,
+    prefer_recent: bool = True,
 ):
     """Like live_search_with_history but streams the answer.
 
@@ -464,13 +530,14 @@ def stream_search_with_history(
     ai_terms = rewrite_query_with_ai(question)
 
     if progress_callback:
-        progress_callback("Durchsuche Rechtsprechung...")
+        progress_callback("Durchsuche aktuelle Rechtsprechung..." if prefer_recent else "Durchsuche Rechtsprechung...")
     sources, used_search = _search_ris_sources(
         question=question,
         applikation=applikation,
         norm=norm,
         max_sources=max_sources,
         ai_search_terms=ai_terms,
+        prefer_recent=prefer_recent,
     )
 
     if progress_callback:

@@ -51,42 +51,97 @@ class DocumentChunk:
         }
 
 
+def _flatten_gz(gz_raw) -> str:
+    """Convert Geschaeftszahl (can be str, dict, or list) to a clean string.
+
+    RIS returns for Rechtssätze a dict like {"item": "3Ob78/23x; 6Ob145/10g; ..."}
+    — we take the LAST (most recent) case number.
+    For single decisions it's a plain string.
+    """
+    if not gz_raw:
+        return ""
+    if isinstance(gz_raw, str):
+        return gz_raw.strip()
+    if isinstance(gz_raw, dict):
+        item = gz_raw.get("item") or gz_raw.get("#text") or ""
+        if isinstance(item, list):
+            # Pick last case (most recent)
+            return str(item[-1]).strip() if item else ""
+        if isinstance(item, str):
+            # Semicolon-separated list → take the most recent (last one)
+            parts = [p.strip() for p in item.split(";") if p.strip()]
+            return parts[-1] if parts else ""
+        return ""
+    if isinstance(gz_raw, list):
+        return str(gz_raw[-1]).strip() if gz_raw else ""
+    return str(gz_raw).strip()
+
+
+def _extract_nested_str(source: dict, *keys) -> str:
+    """Try multiple keys, return first non-empty string value."""
+    for key in keys:
+        val = source.get(key, "") if isinstance(source, dict) else ""
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+        if isinstance(val, dict):
+            item = val.get("item") or val.get("#text")
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+    return ""
+
+
 def extract_metadata(doc_ref: dict) -> dict:
     """Extract structured metadata from an OgdDocumentReference."""
     data = doc_ref.get("Data", {})
     metadaten = data.get("Metadaten", {})
 
-    # The metadata structure varies by Applikation
-    # Try common locations
     judikatur = metadaten.get("Judikatur", metadaten.get("Allgemein", {}))
+    # Nested sub-applications (Justiz, Vwgh, Vfgh, Bvwg)
+    justiz = judikatur.get("Justiz", {}) if isinstance(judikatur.get("Justiz"), dict) else {}
+    vwgh = judikatur.get("Vwgh", {}) if isinstance(judikatur.get("Vwgh"), dict) else {}
+    vfgh = judikatur.get("Vfgh", {}) if isinstance(judikatur.get("Vfgh"), dict) else {}
+    bvwg = judikatur.get("Bvwg", {}) if isinstance(judikatur.get("Bvwg"), dict) else {}
 
-    geschaeftszahl = ""
+    # Geschaeftszahl — handle Rechtssatz-style {"item": "gz1; gz2; ..."}
     gz_data = judikatur.get("Geschaeftszahl", data.get("Geschaeftszahl", ""))
-    if isinstance(gz_data, dict):
-        geschaeftszahl = gz_data.get("#text", str(gz_data))
-    else:
-        geschaeftszahl = str(gz_data)
+    geschaeftszahl = _flatten_gz(gz_data)
 
-    gericht = str(judikatur.get("Gericht", data.get("Gericht", "")))
+    # Gericht — check nested sub-applications
+    gericht = (
+        _extract_nested_str(justiz, "Gericht", "Entscheidungsgericht")
+        or _extract_nested_str(vwgh, "Gericht", "Entscheidungsgericht")
+        or _extract_nested_str(vfgh, "Gericht", "Entscheidungsgericht")
+        or _extract_nested_str(bvwg, "Gericht", "Entscheidungsgericht")
+        or _extract_nested_str(judikatur, "Gericht")
+        or _extract_nested_str(data, "Gericht")
+    )
 
     datum = str(judikatur.get("Entscheidungsdatum", data.get("Entscheidungsdatum", "")))
-    # Normalize date format
     if datum and "T" in datum:
         datum = datum.split("T")[0]
 
-    # Normen can be a list or string
+    # Normen — can be dict {"item": [...]}, list, or string
     normen_raw = judikatur.get("Normen", data.get("Normen", ""))
-    if isinstance(normen_raw, list):
-        normen = [str(n) for n in normen_raw]
+    normen = []
+    if isinstance(normen_raw, dict):
+        item = normen_raw.get("item", "")
+        if isinstance(item, list):
+            normen = [str(n).strip() for n in item if str(n).strip()]
+        elif isinstance(item, str) and item:
+            normen = [n.strip() for n in item.split(";") if n.strip()]
+    elif isinstance(normen_raw, list):
+        normen = [str(n).strip() for n in normen_raw if str(n).strip()]
     elif isinstance(normen_raw, str) and normen_raw:
-        normen = [n.strip() for n in normen_raw.split(";")]
-    else:
-        normen = []
+        normen = [n.strip() for n in normen_raw.split(";") if n.strip()]
 
-    rechtsgebiet = str(judikatur.get("Rechtsgebiet", ""))
-    fachgebiet = str(judikatur.get("Fachgebiet", ""))
-    dokumenttyp = str(judikatur.get("Dokumenttyp", data.get("Dokumenttyp", "")))
-    applikation = str(data.get("Applikation", ""))
+    # Rechtsgebiet — can be nested in Justiz.Rechtsgebiete
+    rechtsgebiet = (
+        _extract_nested_str(justiz, "Rechtsgebiete", "Rechtsgebiet")
+        or _extract_nested_str(judikatur, "Rechtsgebiet")
+    )
+    fachgebiet = _extract_nested_str(judikatur, "Fachgebiet")
+    dokumenttyp = _extract_nested_str(judikatur, "Dokumenttyp") or _extract_nested_str(data, "Dokumenttyp")
+    applikation = _extract_nested_str(data, "Applikation")
 
     # Build source URL
     source_url = ""

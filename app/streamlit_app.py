@@ -321,6 +321,8 @@ with st.sidebar:
     norm = st.text_input("Norm", placeholder="z.B. StGB §127")
     norm = norm if norm else None
     n_results = st.slider("Quellenanzahl", 2, 10, 5)
+    prefer_recent = st.toggle("Aktuelle Rechtsprechung bevorzugen", value=True,
+        help="Sucht zuerst letzte 2 Jahre, dann 5 Jahre, dann alle. Neueste Urteile zuerst.")
 
     st.divider()
     st.markdown("### Dokument hochladen")
@@ -558,6 +560,7 @@ if prompt:
                 norm=norm or "",
                 max_sources=n_results,
                 progress_callback=show_progress,
+                prefer_recent=prefer_recent,
             )
 
             # Clear progress indicator
