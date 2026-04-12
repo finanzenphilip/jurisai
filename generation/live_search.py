@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ingestion.ris_client import RISClient
 from ingestion.document_processor import extract_metadata, parse_html_decision
-from generation.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE
-from generation.claude_client import generate, generate_with_history
+from generation.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, QUERY_REWRITE_PROMPT, FOLLOWUP_PROMPT
+from generation.claude_client import generate, generate_fast, generate_with_history, stream_with_history
 
 logger = logging.getLogger(__name__)
 
@@ -51,25 +51,37 @@ STOPWORDS = {
 }
 
 
-def extract_search_terms(question: str) -> str:
-    """Extract meaningful legal search terms from a natural language question.
+def rewrite_query_with_ai(question: str) -> str:
+    """Use Claude (Sonnet) to rewrite a user question into optimal legal search terms.
 
-    Handles everything from "Was passiert bei Diebstahl?" to complex queries.
+    Falls back to rule-based extraction if AI rewriting fails.
     """
-    # Remove punctuation
+    try:
+        rewritten = generate_fast(
+            user_prompt=QUERY_REWRITE_PROMPT.format(question=question),
+            system_prompt="Du bist ein juristischer Suchexperte für österreichisches Recht. Antworte NUR mit der optimierten Suchanfrage.",
+            max_tokens=80,
+        )
+        rewritten = rewritten.strip().strip('"').strip("'")
+        if rewritten and len(rewritten) > 2:
+            logger.info(f"AI query rewrite: '{question}' -> '{rewritten}'")
+            return rewritten
+    except Exception as e:
+        logger.warning(f"AI query rewrite failed: {e}")
+
+    return extract_search_terms(question)
+
+
+def extract_search_terms(question: str) -> str:
+    """Extract meaningful legal search terms from a natural language question (rule-based fallback)."""
     clean = re.sub(r'[?!.,;:()\[\]{}"\']', ' ', question)
 
-    # Extract any § references first (important for legal search)
     paragraphs = re.findall(r'§\s*\d+[a-z]?', clean)
-
-    # Extract legal code references
     codes = re.findall(r'\b(?:StGB|StPO|ABGB|ZPO|UGB|GmbHG|AktG|VStG|AVG|BVergG|MRG|WEG|ASVG|KSchG|GewO|DSG|DSGVO|EStG|BAO|FinStrG|IO|AußStrG|SMG|VbVG|VerG|UStG|KStG|BWG|WAG|WpHG|BörseG|FMABG|InvFG|AIFMG|GSpG|TKG|MedienG|StVO|FSG|KFG|EheG|EPG|KindNamRÄG|ABGB|PHG|FernFinG|FAGG|VKrG|HIKrG|AltFG|ArbVG|AngG|AZG|UrlG|MuttSchG|KBGG|BMSVG|GlBG|BEinstG|AuslBG)\b', clean, re.IGNORECASE)
 
-    # Split into words and filter stopwords
     words = clean.lower().split()
     meaningful = [w for w in words if w not in STOPWORDS and len(w) > 1 and not w.isdigit()]
 
-    # Combine: legal references first, then meaningful words
     terms = []
     for code in codes:
         terms.append(code)
@@ -80,8 +92,7 @@ def extract_search_terms(question: str) -> str:
             terms.append(word)
 
     search = " ".join(terms) if terms else question.strip()
-
-    logger.info(f"Search terms: '{question}' -> '{search}'")
+    logger.info(f"Rule-based search terms: '{question}' -> '{search}'")
     return search
 
 
@@ -288,14 +299,14 @@ def _search_ris_sources(
     applikation: str = "Justiz",
     norm: str = "",
     max_sources: int = 5,
+    ai_search_terms: str = "",
 ) -> tuple[list[LiveSource], str]:
     """Search RIS and return sources + the query that worked.
 
-    Extracted helper so both live_search_and_answer and live_search_with_history
-    can share the same search logic.
+    Uses AI-rewritten search terms when provided, falls back to rule-based extraction.
     """
     ris = RISClient(delay=0.3)
-    search_terms = extract_search_terms(question)
+    search_terms = ai_search_terms or extract_search_terms(question)
     logger.info(f"Live search: '{search_terms}' (app={applikation})")
 
     sources: list[LiveSource] = []
@@ -370,35 +381,43 @@ def _build_ris_context(sources: list[LiveSource]) -> str:
 
 def live_search_with_history(
     question: str,
-    history: list,  # [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
+    history: list,
     applikation: str = "Justiz",
     norm: str = "",
     max_sources: int = 5,
+    progress_callback=None,
 ) -> LiveResponse:
     """Search RIS live (Judikatur + Bundesrecht) and answer with conversation history.
 
-    Like live_search_and_answer but sends previous conversation turns so Claude
-    can understand follow-up questions like "und was wenn er vorbestraft ist?".
+    Args:
+        progress_callback: Optional callable(step: str) to report progress steps.
     """
-    search_terms = extract_search_terms(question)
+    # Step 1: AI-powered query rewriting
+    if progress_callback:
+        progress_callback("Analysiere Rechtsfrage...")
+    ai_terms = rewrite_query_with_ai(question)
 
-    # 1) Search Judikatur
+    # Step 2: Search Judikatur
+    if progress_callback:
+        progress_callback("Durchsuche Rechtsprechung...")
     sources, used_search = _search_ris_sources(
         question=question,
         applikation=applikation,
         norm=norm,
         max_sources=max_sources,
+        ai_search_terms=ai_terms,
     )
 
-    # 2) Search Bundesrecht
+    # Step 3: Search Bundesrecht
+    if progress_callback:
+        progress_callback("Durchsuche Bundesgesetze...")
     gesetz_sources = _search_bundesrecht_sources(
-        search_terms=search_terms,
+        search_terms=ai_terms,
         max_sources=3,
     )
 
     has_any = bool(sources) or bool(gesetz_sources)
 
-    # Build the new user message with RIS context
     if not has_any:
         new_user_content = (
             f'Der Benutzer fragt: "{question}"\n\n'
@@ -412,8 +431,10 @@ def live_search_with_history(
         context = _build_combined_context(sources, gesetz_sources)
         new_user_content = RAG_PROMPT_TEMPLATE.format(question=question, context=context)
 
-    # Build full messages list: previous history + new user message
     messages = list(history) + [{"role": "user", "content": new_user_content}]
+
+    if progress_callback:
+        progress_callback("Erstelle rechtliche Analyse...")
 
     answer = generate_with_history(messages=messages, system_prompt=SYSTEM_PROMPT)
 
@@ -423,3 +444,77 @@ def live_search_with_history(
         gesetz_sources=gesetz_sources,
         query_used=used_search,
     )
+
+
+def stream_search_with_history(
+    question: str,
+    history: list,
+    applikation: str = "Justiz",
+    norm: str = "",
+    max_sources: int = 5,
+    progress_callback=None,
+):
+    """Like live_search_with_history but streams the answer.
+
+    Returns (sources, gesetz_sources, query_used, stream_iterator).
+    The caller iterates stream_iterator to get text chunks.
+    """
+    if progress_callback:
+        progress_callback("Analysiere Rechtsfrage...")
+    ai_terms = rewrite_query_with_ai(question)
+
+    if progress_callback:
+        progress_callback("Durchsuche Rechtsprechung...")
+    sources, used_search = _search_ris_sources(
+        question=question,
+        applikation=applikation,
+        norm=norm,
+        max_sources=max_sources,
+        ai_search_terms=ai_terms,
+    )
+
+    if progress_callback:
+        progress_callback("Durchsuche Bundesgesetze...")
+    gesetz_sources = _search_bundesrecht_sources(
+        search_terms=ai_terms,
+        max_sources=3,
+    )
+
+    has_any = bool(sources) or bool(gesetz_sources)
+
+    if not has_any:
+        new_user_content = (
+            f'Der Benutzer fragt: "{question}"\n\n'
+            "Es wurden keine spezifischen Gesetze oder Gerichtsentscheidungen in der RIS-Datenbank gefunden.\n\n"
+            "Bitte erkläre die rechtliche Situation basierend auf dem österreichischen Recht so gut du kannst.\n"
+            "Weise klar darauf hin, dass keine konkreten Quellen aus der RIS-Datenbank zitiert werden können\n"
+            "und empfehle, einen Anwalt zu konsultieren für den konkreten Fall.\n\n"
+            "Erkläre die relevanten Gesetze und Paragraphen allgemein verständlich."
+        )
+    else:
+        context = _build_combined_context(sources, gesetz_sources)
+        new_user_content = RAG_PROMPT_TEMPLATE.format(question=question, context=context)
+
+    messages = list(history) + [{"role": "user", "content": new_user_content}]
+
+    if progress_callback:
+        progress_callback("Erstelle rechtliche Analyse...")
+
+    stream = stream_with_history(messages=messages, system_prompt=SYSTEM_PROMPT)
+
+    return sources, gesetz_sources, used_search, stream
+
+
+def generate_followup_questions(question: str, answer: str) -> list[str]:
+    """Generate 3 follow-up question suggestions based on the answer."""
+    try:
+        result = generate_fast(
+            user_prompt=FOLLOWUP_PROMPT.format(question=question, answer=answer[:2000]),
+            system_prompt="Du bist ein juristischer Assistent. Antworte NUR mit 3 Folgefragen, eine pro Zeile.",
+            max_tokens=200,
+        )
+        questions = [q.strip().lstrip("0123456789.-) ") for q in result.strip().split("\n") if q.strip()]
+        return questions[:3]
+    except Exception as e:
+        logger.warning(f"Follow-up generation failed: {e}")
+        return []
