@@ -54,8 +54,8 @@ CHROMA_COLLECTION = "ris_judikatur"
 
 # Claude
 ANTHROPIC_API_KEY = _get_secret("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = "claude-sonnet-4-6-20250514"  # Hauptantworten (Sonnet = schnell + guenstig + sehr gut)
-CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"  # Query-Rewriting, Follow-Ups (Haiku = blitzschnell)
+CLAUDE_MODEL = "claude-sonnet-4-6"  # Hauptantworten (Sonnet = schnell + guenstig + sehr gut)
+CLAUDE_MODEL_FAST = "claude-haiku-4-5"  # Query-Rewriting, Follow-Ups (Haiku = blitzschnell)
 CLAUDE_TEMPERATURE = 0
 CLAUDE_MAX_TOKENS = 8192
 MAX_CONTEXT_CHUNKS = 8
